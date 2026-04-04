@@ -63,9 +63,9 @@ int main(int argc, char** argv) {
       double time_per_half_trip = (end_time - start_time) / (2.0 * NUM_ITERATIONS);
       std::cout << data_bytes << "\t\t\t" << time_per_half_trip << std::endl;
     }
-
-    // 最後全員で退出
-    MPI_Finalize();
-    return 0;
   }
+
+  // 最後全員で退出
+  MPI_Finalize();
+  return 0;
 }
