@@ -1,0 +1,10 @@
+# 実行ファイル（拡張子なしのバイナリ等）
+*
+!*.*
+!.gitignore
+
+# .devcontainerディレクトリ内はすべて（Dockerfile含む）管理対象とする
+!.devcontainer/**
+
+# オブジェクトファイル
+*.o

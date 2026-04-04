@@ -1,0 +1,17 @@
+{
+  "name": "HPC Local Sandbox",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+        "C_Cpp.default.cStandard": "c11"
+      },
+      "extensions": ["ms-vscode.cpptools", "ms-vscode.cpptools-extension-pack"]
+    }
+  },
+  "remoteUser": "hpcuser"
+}
