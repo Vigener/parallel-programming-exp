@@ -8,10 +8,9 @@
 #define M 1000      // タスクC用の行列サイズ (1000x1000)
 
 // 時間計測用ヘルパー関数
+// 時間計測用ヘルパー関数 (OpenMP仕様)
 double get_time() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec * 1e-6;
+    return omp_get_wtime();
 }
 
 // (a) 配列データの総和を求めよ (浮動小数)
