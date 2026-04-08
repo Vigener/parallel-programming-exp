@@ -3,6 +3,13 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "features": {
+    // Microsoft公式のRust環境を「後乗せ」する
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "minimal"
+    }
+  },
   "customizations": {
     "vscode": {
       "settings": {
@@ -10,7 +17,12 @@
         "C_Cpp.default.compilerPath": "/usr/bin/gcc",
         "C_Cpp.default.cStandard": "c11"
       },
-      "extensions": ["ms-vscode.cpptools", "ms-vscode.cpptools-extension-pack"]
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        // Rust用の拡張機能もここに追加しておくと便利です
+        "rust-lang.rust-analyzer"
+      ]
     }
   },
   "remoteUser": "hpcuser"
