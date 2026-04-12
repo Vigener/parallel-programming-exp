@@ -1,0 +1,61 @@
+# ~/ghq/github.com/mikoto/parallel-programming-exp/mise.toml
+
+[tasks.init-typst]
+description = "Step 1: Convert Markdown to Typst and prepend custom configuration"
+run = """
+#!/usr/bin/env bash
+echo "🚀 Converting Markdown to Typst (Body only)..."
+
+# Pandocで純粋な本文のみを変換（-sは使わない）し、一時ファイルに出力
+pandoc report.md -o .tmp_body.typ
+
+echo "✍️ Prepending minimal Typst configuration..."
+
+# ヒアドキュメントを使って、必要なヘッダー情報のみを report.typ に新規作成
+cat << 'EOF' > report.typ
+// --- Minimal Typst Configuration ---
+#set text(
+  lang: "ja",
+  font: ("New Computer Modern", "Hiragino Mincho ProN")
+)
+// -----------------------------------
+
+EOF
+
+# 一時ファイルの本文を report.typ の末尾に結合し、一時ファイルを削除
+cat .tmp_body.typ >> report.typ
+rm .tmp_body.typ
+
+echo "✅ Generated clean report.typ. You can now tweak the layout."
+"""
+
+[tasks.watch-pdf]
+description = "Step 2: Watch Typst file and auto-compile to PDF on save"
+run = """
+#!/usr/bin/env bash
+echo "👀 Watching report.typ for changes..."
+echo "💡 Press Ctrl+C to stop."
+typst watch report.typ
+"""
+
+[tasks.build-pdf]
+description = "One-shot build (Markdown -> PDF directly via temporary Typst file)"
+run = """
+#!/usr/bin/env bash
+echo "🚀 Building PDF directly..."
+# 一発変換の場合も、一旦クリーンなTypstファイルを作ってからコンパイルする
+mise run init-typst
+typst compile report.typ report.pdf
+echo "✅ Successfully generated: report.pdf"
+"""
+
+[tasks.scp]
+description = "Copy a repo path to PPX while preserving its relative location"
+usage = '''
+arg "<path>" help="Repository-relative file or directory to copy to PPX"
+'''
+run = "bash scripts/scp-ppx.sh \"${usage_path?}\""
+
+[tasks.ssh-ppx]
+description = "Open an SSH session on PPX"
+run = "ssh ppx"
