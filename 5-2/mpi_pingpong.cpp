@@ -22,25 +22,46 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // テストするデータサイズの配列データサイズの配列
-  std::vector<int> message_sizes = {1, 10, 100, 1000, 10000, 100000, 1000000};
-  const int NUM_ITERATIONS = 100; // 各サイズでの通信を100回繰り返す
+  const std::size_t MIN_BYTES = 8;
+  const std::size_t MAX_BYTES = 16 * 1024 * 1024; // 16 MB
+  const int WARMUP_ITERATIONS = 10;
 
   if (rank == 0) {
-    std::cout << "=== MPI Ping-Pong Test ===" << std::endl;
-    std::cout << "Data_Size(Bytes)\tTime_per_Half_Trip(sec)" << std::endl;
+    std::cout << "DataSize_Bytes,Time_sec" << std::endl;
   }
 
-  for (int count : message_sizes) {
+  for (std::size_t data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes <<= 1) {
+    int count = static_cast<int>(data_bytes / sizeof(double));
+
+    // 条件に合わせて、各サイズで 100〜1000 回の往復を行う
+    int num_iterations = 100;
+    if (data_bytes <= 64 * 1024) {
+      num_iterations = 1000;
+    } else if (data_bytes <= 1024 * 1024) {
+      num_iterations = 500;
+    }
+
     // 送受信用のデータ箱を用意
     std::vector<double> data(count, 1.0);
-    int data_bytes = count * sizeof(double);
 
     MPI_Barrier(MPI_COMM_WORLD); // 全プロセスがここまで来るのを待つ
 
+    // 初回の影響を減らすため軽くウォームアップ
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      if (rank == 0) {
+        MPI_Send(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (rank == 1) {
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
     // 時間計測開始
     double start_time = MPI_Wtime();
-    for (int i = 0; i < NUM_ITERATIONS; i++) {
+    for (int i = 0; i < num_iterations; i++) {
       if (rank == 0) {
         // プロセス0がプロセス1にデータを送る
         // MPI_Send(送るデータ, 要素数, 型, 宛先, タグ, コミュニケータ)
@@ -60,8 +81,8 @@ int main(int argc, char** argv) {
 
     if (rank == 0) {
       // 往復時間(Ping-Pong)の合計を、回数*2 で割り、片道(Tcomm)の時間を算出
-      double time_per_half_trip = (end_time - start_time) / (2.0 * NUM_ITERATIONS);
-      std::cout << data_bytes << "\t\t\t" << time_per_half_trip << std::endl;
+      double time_per_half_trip = (end_time - start_time) / (2.0 * num_iterations);
+      std::cout << data_bytes << "," << time_per_half_trip << std::endl;
     }
   }
 
