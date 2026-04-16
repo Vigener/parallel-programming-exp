@@ -3,6 +3,7 @@
 !*/
 !**/*.*
 !.gitignore
+!Makefile
 
 # 自動生成物の定番は除外する
 **/target/
