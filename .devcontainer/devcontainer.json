@@ -1,10 +1,9 @@
 {
-  "name": "HPC Local Sandbox",
+  "name": "HPC & Quantum Strategy Lab",
   "build": {
     "dockerfile": "Dockerfile"
   },
   "features": {
-    // Microsoft公式のRust環境を「後乗せ」する
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "latest",
       "profile": "minimal"
@@ -14,16 +13,26 @@
     "vscode": {
       "settings": {
         "editor.formatOnSave": true,
-        "C_Cpp.default.compilerPath": "/usr/bin/gcc",
-        "C_Cpp.default.cStandard": "c11"
+        "C_Cpp.default.compilerPath": "/usr/bin/gcc"
       },
       "extensions": [
         "ms-vscode.cpptools",
-        "ms-vscode.cpptools-extension-pack",
-        // Rust用の拡張機能もここに追加しておくと便利です
-        "rust-lang.rust-analyzer"
+        "rust-lang.rust-analyzer",
+        "myriad-dreamin.tinymist",
+        "tomoki1207.pdf",
+        "github.copilot",
+        "ms-python.python"
       ]
     }
   },
-  "remoteUser": "hpcuser"
+  // 変更点1: sudoを排除し、uvもtypstも $HOME/.local/bin にインストール・配置する
+  "postCreateCommand": "mkdir -p $HOME/.local/bin && curl -LsSf https://astral.sh/uv/install.sh | sh && curl -L https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz | tar -xJ && mv typst-x86_64-unknown-linux-musl/typst $HOME/.local/bin/ && rm -rf typst-x86_64-unknown-linux-musl",
+  
+  // 変更点2: $HOME/.local/bin にパスを通し、コンテナ起動直後から uv と typst を使えるようにする
+  "remoteEnv": {
+    "PATH": "${containerEnv:HOME}/.local/bin:${containerEnv:PATH}"
+  },
+  
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
 }

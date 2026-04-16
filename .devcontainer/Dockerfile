@@ -3,8 +3,7 @@ FROM ubuntu:22.04
 # 対話的プロンプトを無効化
 ENV DEBIAN_FRONTEND=noninteractive
 
-# コンパイラ、OpenMP、MPI、git、その他必須ツールのインストール
-# （ここに git と、念のため ssh-client を追加しました）
+# HPCツール、システムツール、および日本語フォント(Noto CJK)のインストール
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -17,10 +16,19 @@ RUN apt-get update && apt-get install -y \
     htop \
     git \
     openssh-client \
+    curl \
+    xz-utils \
+    fonts-noto-cjk \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 一般ユーザーの作成
-RUN useradd -m -s /bin/bash hpcuser
-USER hpcuser
-WORKDIR /home/hpcuser/workspace
+# グローバルスタンダードに合わせたユーザー「vscode」の作成
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s /bin/bash
+
+# デフォルトユーザーの設定
+USER $USERNAME
