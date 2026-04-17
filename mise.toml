@@ -1,32 +1,92 @@
 # ~/ghq/github.com/mikoto/parallel-programming-exp/mise.toml
 
+# [tasks.init-typst]
+# description = "Step 1: Convert Markdown to Typst and prepend custom configuration"
+# run = """
+# #!/usr/bin/env bash
+# echo "🚀 Converting Markdown to Typst (Body only)..."
+
+# # Pandocで純粋な本文のみを変換（-sは使わない）し、一時ファイルに出力
+# pandoc report.md -o .tmp_body.typ
+
+# echo "✍️ Prepending minimal Typst configuration..."
+
+# # ヒアドキュメントを使って、必要なヘッダー情報のみを report.typ に新規作成
+# cat << 'EOF' > report.typ
+# // --- Minimal Typst Configuration ---
+# #set text(
+#   lang: "ja",
+#   font: ("New Computer Modern", "Hiragino Mincho ProN")
+# )
+# // -----------------------------------
+
+# EOF
+
+# # 一時ファイルの本文を report.typ の末尾に結合し、一時ファイルを削除
+# cat .tmp_body.typ >> report.typ
+# rm .tmp_body.typ
+
+# echo "✅ Generated clean report.typ. You can now tweak the layout."
+# """
+
 [tasks.init-typst]
-description = "Step 1: Convert Markdown to Typst and prepend custom configuration"
+description = "Initialize Typst report scaffold from report.md only when report.typ does not exist"
 run = """
 #!/usr/bin/env bash
-echo "🚀 Converting Markdown to Typst (Body only)..."
+set -euo pipefail
 
-# Pandocで純粋な本文のみを変換（-sは使わない）し、一時ファイルに出力
-pandoc report.md -o .tmp_body.typ
+if [[ -f report.typ ]]; then
+	echo "ℹ️ report.typ already exists. Skip conversion to avoid overwriting manual edits."
+	exit 0
+fi
 
-echo "✍️ Prepending minimal Typst configuration..."
+if [[ ! -f report.md ]]; then
+	echo "❌ report.md not found. Nothing to convert." >&2
+	exit 1
+fi
 
-# ヒアドキュメントを使って、必要なヘッダー情報のみを report.typ に新規作成
-cat << 'EOF' > report.typ
-// --- Minimal Typst Configuration ---
-#set text(
-  lang: "ja",
-  font: ("New Computer Modern", "Hiragino Mincho ProN")
+if ! command -v pandoc >/dev/null 2>&1; then
+	echo "❌ pandoc is required for init-typst. Install pandoc and retry." >&2
+	exit 1
+fi
+
+mkdir -p .typst
+
+if ! command -v ghq >/dev/null 2>&1; then
+	echo "❌ ghq is required to locate template source. Install ghq or copy template manually." >&2
+	exit 1
+fi
+
+template_src="$(ghq root)/github.com/Vigener/dotfiles/typst/template.typ"
+if [[ ! -f "$template_src" ]]; then
+	echo "❌ template source not found: $template_src" >&2
+	exit 1
+fi
+cp "$template_src" .typst/template.typ
+
+tmp_body=".tmp_report_body.typ"
+pandoc report.md -o "$tmp_body"
+
+cat > report.typ <<'EOF'
+#import ".typst/template.typ": report
+
+// 任意の追加import例
+// #import "/assets/5-2/mpi_collective_tables.typ": collective_tables
+
+// true: 先頭に目次を表示, false: 非表示
+#let show_toc = true
+
+#show: report.with(
+	title: "高性能並行プログラミング (主専攻実験K-9) 進捗ログ",
+	show-toc: show_toc,
 )
-// -----------------------------------
 
 EOF
 
-# 一時ファイルの本文を report.typ の末尾に結合し、一時ファイルを削除
-cat .tmp_body.typ >> report.typ
-rm .tmp_body.typ
+cat "$tmp_body" >> report.typ
+rm -f "$tmp_body"
 
-echo "✅ Generated clean report.typ. You can now tweak the layout."
+echo "✅ Generated report.typ and .typst/template.typ"
 """
 
 [tasks.watch-pdf]

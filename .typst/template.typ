@@ -6,6 +6,9 @@
 #let report(
   title: "",
   subtitle: "",
+  show-toc: true,
+  toc-title: [目次],
+  toc-depth: 2,
   author: "五十嵐 尊人",
   student-id: "202310970",
   department: "筑波大学 情報科学類",
@@ -36,8 +39,14 @@
   // 数式に自動で (1), (2) と番号を振る
   set math.equation(numbering: "(1)")
   
-  // リンクの文字色を青に
-  show link: set text(fill: blue)
+  // 通常リンクを青 + 下線にして、視認しやすくする
+  show link: it => {
+    underline(text(fill: rgb("#0b57d0"))[#it])
+  }
+
+  // 図表参照（@label）は青のみ（下線なし）にして、Webリンクと見分けやすくする
+  // `ref` をそのまま残して文字色だけ変えることで、参照のクリック機能を維持する。
+  show ref: set text(fill: rgb("#2f5ea8"))
 
   // --------------------------------------------------------
   // 3. コードブロックの装飾（尊人さんの設定2を完全統合）
@@ -88,6 +97,11 @@
   ]
 
   v(2em)
+
+  if show-toc {
+    outline(title: toc-title, depth: toc-depth)
+    pagebreak()
+  }
 
   // --------------------------------------------------------
   // 5. 本文の展開

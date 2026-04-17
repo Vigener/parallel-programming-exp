@@ -2,10 +2,13 @@
 
 #import "/assets/5-2/mpi_collective_tables.typ": collective_tables
 
+#let show_toc = true // true: 先頭に目次を表示, false: 非表示
 
 #show: report.with(
   title: "高性能並行プログラミング (主専攻実験K-9) \n 進捗ログ",
+  show-toc: show_toc,
 )
+
 
 // // --- Minimal Typst Configuration ---
 // #set text(
@@ -97,6 +100,60 @@ lim_(p arrow.r oo) E\(p\)= lim_(p arrow.r oo) 1 / p dot.op frac(T_s + T_p, T_s +
   - それぞれの計測を5回ずつ実行し、平均値を取るようにした。
 
 === 配列サイズを固定して、スレッド数を変化させる場合の性能評価を行うコード
+
+#strong[ソースコードのエッセンス抜粋（openmp_tasks.cpp）]
+
+```cpp
+// 必要なライブラリを読み込む（<iostream>, <vector>, <cmath>, <omp.h>）
+
+double get_time() { return omp_get_wtime(); }
+
+// (a) 整数配列の総和（Int版）
+void task_a_int(int n, const std::vector<int>& data) {
+  int sum = 0;
+  double start = get_time();
+  #pragma omp parallel for reduction(+:sum)
+  for (int i = 0; i < n; i++) sum += data[i];
+  std::cout << "A_Int, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
+}
+// task_a_float(...) も実装済み：型を float/double に変えた同様の実装
+
+// (b) 1/m * sin(1/m) の総和
+void task_b(int n) {
+  double sum = 0.0;
+  double start = get_time();
+  #pragma omp parallel for reduction(+:sum)
+  for (int m = 1; m <= n; m++) {
+    double v = 1.0 / m;
+    sum += v * std::sin(v);
+  }
+  std::cout << "B, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
+}
+
+// (c) 行列積 C = A * B
+void task_c(int m, int k, int n, const std::vector<std::vector<double>>& A,
+            const std::vector<std::vector<double>>& B, std::vector<std::vector<double>>& C) {
+  double start = get_time();
+  #pragma omp parallel for
+  for (int i = 0; i < m; i++)
+    for (int j = 0; j < n; j++) {
+      double tmp = 0.0;
+      for (int l = 0; l < k; l++) tmp += A[i][l] * B[l][j];
+      C[i][j] = tmp;
+    }
+  std::cout << "C, " << omp_get_max_threads() << ", " << m << "x" << n << ", " << get_time() - start << std::endl;
+}
+
+int main() {
+  // 配列のサイズ(N) を変えながら、それぞれの task_*() を実行
+  // - A(Int), A(Float): N = {10, 1000, 1e6, 1e7, 1e8}
+  // - B:              N = {10, 1000, 1e6, 1e7, 1e8}
+  // - C:              size = {10, 100, 500, 1000}
+  // （初期化とループ本体は省略）
+}
+```
+
+※掲載は要点のみ。全体コードは最終版でGitHubリンク（コミットハッシュ付き）を併記予定。
 
 - `openmp_tasks_constN.cpp`:
   `openmp_tasks.cpp`の配列サイズを固定したもの。
@@ -422,14 +479,14 @@ CSV形式で出力したものをもとに、以下のような表を作成し�
 #figure(
   align(center)[
     #image("assets/5-2/mpi_pingpong_comparison.pdf", alt: "MPI Ping-Pong ノード間 vs ノード内通信比較グラフ", width: 80%)
-  ]
+  ], caption: [MPI Ping-Pong ノード間 vs ノード内通信比較グラフ]
 )
 
 両軸対数グラフで比較すると、以下のようになる。
 #figure(
   align(center)[
     #image("assets/5-2/mpi_pingpong_comparison_loglog.pdf", alt: "MPI Ping-Pong ノード間 vs ノード内通信比較グラフ (log-log)", width: 80%)
-  ]
+  ], caption: [MPI Ping-Pong ノード間 vs ノード内通信比較グラフ (log-log)]
 )
 
 
@@ -479,8 +536,8 @@ $ sbatch mpi_collective.sh
 #strong[データサイズを変化させた場合の通信時間の比較（P=16 固定）]:
 #figure(
   align(center)[
-    #image("assets/5-2/mpi_collective_size_vs_time.pdf")
-  ]
+    #image("assets/5-2/mpi_collective_size_vs_time.pdf", alt: "データサイズ vs 通信時間", width: 80%)
+  ], caption: [集団通信 データサイズ vs 通信時間]
 )
 
 #figure(
@@ -498,7 +555,7 @@ $ sbatch mpi_collective.sh
 #figure(
   align(center)[
     #image("assets/5-2/mpi_collective_procs_vs_time.pdf", width: 90%)
-  ]
+  ], caption: [集団通信 プロセス数 vs 通信時間]
 )
 
 #align(center)[
@@ -523,31 +580,61 @@ $ sbatch mpi_collective.sh
 - 青色の線（手動でのブロードキャスト）はプロセス数の増加に伴い、通信時間も大きくなっていることがわかる。さらに、橙色の線(MPI_Allgather)は、特にデータ量が多い場合において、タイムの悪化が見られる。
   - MPIによる効率化があっても、Allgatherのような全員集約通信は、プロセス数が増えると通信量が爆発的に増加するため、通信時間も大きくなってしまうと考えられる。
 
-== 5.2 (e) 通信の競合（ネットワーク輻輳）テスト
+== 5.2 (e) 通信の競合テスト
+
+=== コードの説明:
+
+- `mpi_congestion.cpp`: MPIを用いて、複数のプロセスが同時に通信を行う場合の通信時間を計測するコード。
+  - データサイズNを8~16MBの範囲で変化させて、通信時間を計測する。
+  - ペア通信については、例えば、プロセス数が32なら、プロセス0とプロセス16が通信を行う、プロセス1とプロセス17が通信を行う、というように、隣同士（ノード内）にならないように通信ペアを設定した。
+  - 通信時間計測の前に、通信のウォームアップとして、各プロセスが1回通信を行うようにした。
+  - 通信は、各データサイズに対して100回の通信を行い、その平均値を通信時間として算出する。
+- `mpi_congestion.sh`: `mpi_congestion.cpp`を実行するシェルスクリプト。
+  - `mpirun -N 4`で4ノードを使用して通信を行う。
+  - プロセス数を[2 4 8 16 32]で変化させて、`mpi_congestion.cpp`を実行するようにした。
+
+=== 実行環境:
+
+- PPX (ppx2-[00, 01, 02, 03])
+
+=== 実行方法:
+
+```bash
+$ mpicxx -O3 -Wall mpi_congestion.cpp -o mpi_congestion
+$ sbatch mpi_congestion.sh
+```
+
+=== 実行結果:
+
+#figure(
+  align(center)[
+    #image("assets/5-2/mpi_congestion.pdf", alt: "通信時間 vs プロセス数", width: 80%)
+  ], caption: [ペア通信 [通信時間 vs プロセス数] (log-logグラフ)]
+) <fig:mpi-congestion-loglog>
+
+#figure(
+  align(center)[
+    // mpi_congestion.typの表をここに表示
+    #include "assets/5-2/mpi_congestion.typ"
+  ], 
+  caption: [ペア通信の通信時間の表], 
+  kind: table
+) <tbl:mpi-congestion>
 
 
 
-// #strong[実行結果:]
 
-// #figure(
-//   align(center)[#table(
-//     columns: 3,
-//     align: (auto,auto,auto,),
-//     table.header([Data\_Bytes], [Single\_Pair(s)], [Multiple\_Pairs(s)],),
-//     table.hline(),
-//     [8], [0.000001], [0.000001],
-//     [80], [0.000001], [0.000001],
-//     [800], [0.000003], [0.000003],
-//     [8000], [0.000007], [0.000009],
-//     [80000], [0.000011], [0.000017],
-//     [800000], [0.000115], [0.000119],
-//     [8000000], [0.001110], [0.002026],
-//   )]
-//   , kind: table
-//   )
 
-// === 5.2 (e) の考察
-// <e-の考察>
+=== 5.2 (e) の考察
+
+- データサイズが小さい領域(8Bytes~数KB程度)では、通信ペア数が１ペア（２プロセス）から３２ペア（６４プロセス）に増加しても、通信時間があまり増加していないことがわかる。これは、データサイズが小さい場合は、通信のレイテンシが支配的であるため、通信ペア数の増加による影響が小さいと考えられる。
+- 一方で、1MB以上の大容量データにおいては、通信ペア数の増加に伴い、通信時間が明確に右肩上がりに増加していることがわかる。（例: 16MB通信で、1ペア時の約1.5msから、32ペア時には約23.5.msへと大幅に遅延。）
+  - これは、全ペアが一斉に大容量データの通信を行おうとした結果、一度に通信できる転送帯域を超えてしまい、ネットワークの競合が発生しているためであると考えられる。
+- [留意点]: 
+  - @fig:mpi-congestion-loglog は両対数スケールを使用しているため、視覚的には、少量のデータサイズにおいての微小な増加が大きく見えるが、@tbl:mpi-congestion からもわかる通り絶対値（実際の通信時間）で見ると、データサイズが小さい領域では、通信ペア数の増加による通信時間の増加は、数マイクロ秒程度の微小なものであることがわかる。
+- [実験上の工夫]: 
+  - 実験の初期段階において、最もデータサイズの小さい8 Bytesの通信において、通信時間が16 KBの時よりも大きくなってしまうなどの結果が見られた。原因を調べたところ、MPIの仕様である初回通信時の動的なコネクション確立が関連しているのではないかと考え、時間計測前に事前通信を行うようにしたところ、通信時間の結果が安定し、綺麗な右肩上がりの傾向が見られるようになった。
+
 // == 寄り道: Rust(Rayon)による並列化実験
 // <寄り道-rustrayonによる並列化実験>
 // Rustにも、C++のOpenMPやMPIのような並列処理を簡単に実装できるライブラリが存在することを知ったので、実験してみた。
@@ -609,10 +696,8 @@ $ sbatch mpi_collective.sh
 に相当するパラメータを求めよ．同様に，ノード内のプロセッサ間で MPI
 通信を行った場合についても調べよ
 ```
-$T_(c o m m) = a + N / b$ … (5)
 
-
-#strong[\[解答\]]
+#align(center)[$T_(c o m m) = a + N / b$ … (5)]
 
 === 算出方法: 
 - \[課題 5.2\]で行なった通信実験の結果をもとに、計算する。
@@ -659,7 +744,7 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
 //     alt text
 //   ]
 // )
-=== 4.4の考察
+=== [4.4節 課題]の考察
 
 - ノード内通信の方が、レイテンシもバンド幅も、ノード間通信よりもわずかに優れていることがわかる。
 - バンド幅については、両者とも約11 GB/sであり、ほぼ同程度の性能を持っていると考えられる。
@@ -669,13 +754,14 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
 = 課題 4： 
 
 #strong[実験テキスト 5.4 節のハイブリッドプログラムについて，ソースを提示し，並列化の手法・工夫について解説せよ．プログラムの動きや，どういう点を考えて並列化を行ったか，速度向上に対する予測（「こうしたからここが速くなるはず」，「ここは逐次のままなので速度向上に貢献しない」など）を記述せよ．]
-
 ```
-[5.4節 課題]
-
+[5.4節 課題]:
+(要約)
+5.3節で作成したN体問題（重力相互作用）のシミュレーションプログラムを元に、MPIとOpenMPを組み合わせたハイブリッド並列プログラムを実装し、以下の点について論じよ。
+・実装したハイブリッドプログラムのソースコードの提示。
+・並列化の手法・工夫についての解説（プログラムの設計思想や動作の仕組み）。
+・速度向上に対する論理的な予測（「OpenMPとMPIをどのように分担させたから速くなるはず」「この通信・集計処理は逐次のままなので速度向上に貢献しない（アムダールの法則）」などの考察）。
 ```
-
-
 // == 5.4 重力プログラミング(N体問題)
 // <重力プログラミングn体問題>
 // - #strong[実行環境]: PPX, 2ノードに8プロセスを配置 (`-N 2 -n 8`)
