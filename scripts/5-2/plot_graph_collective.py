@@ -16,6 +16,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = PROJECT_ROOT / "assets" / "5-2"
+
+
 def read_pingpong_csv(csv_path: Path) -> tuple[list[int], list[float]]:
 	"""Read ping-pong CSV and return (sizes, times_sec)."""
 	sizes: list[int] = []
@@ -104,13 +108,14 @@ def make_figure1_size_vs_time(
 	plt.title("MPI Ping-Pong vs 集団通信（P=16）の通信コスト比較", fontsize=13, fontweight="bold")
 
 	plt.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
-	plt.legend(fontsize=10, loc="upper left")
+	plt.legend(fontsize=18, loc="upper left")
 	plt.tight_layout()
 
 	# Save figure
 	output_path = Path(output_path)
 	if not output_path.is_absolute():
-		output_path = Path(__file__).parent / output_path
+		OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+		output_path = OUTPUT_DIR / output_path.name
 	plt.savefig(output_path, dpi=300, bbox_inches="tight")
 	plt.close()
 
@@ -178,13 +183,14 @@ def make_figure2_procs_vs_time(collective_csv: Path, output_path: Path) -> None:
 	plt.title("MPI 集団通信：プロセス数の増加による通信時間の変化", fontsize=13, fontweight="bold")
 
 	plt.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
-	plt.legend(fontsize=9, loc="upper left", ncol=2)
+	plt.legend(fontsize=12, loc="upper left", ncol=2)
 	plt.tight_layout()
 
 	# Save figure
 	output_path = Path(output_path)
 	if not output_path.is_absolute():
-		output_path = Path(__file__).parent / output_path
+		OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+		output_path = OUTPUT_DIR / output_path.name
 	plt.savefig(output_path, dpi=300, bbox_inches="tight")
 	plt.close()
 
@@ -211,14 +217,14 @@ def main() -> None:
 	parser.add_argument(
 		"--output1",
 		type=Path,
-		default=Path("mpi_collective_size_vs_time.png"),
-		help="Figure 1の出力PNGファイル名",
+		default=Path("mpi_collective_size_vs_time.pdf"),
+		help="Figure 1の出力PDFファイル名",
 	)
 	parser.add_argument(
 		"--output2",
 		type=Path,
-		default=Path("mpi_collective_procs_vs_time.png"),
-		help="Figure 2の出力PNGファイル名",
+		default=Path("mpi_collective_procs_vs_time.pdf"),
+		help="Figure 2の出力PDFファイル名",
 	)
 	args = parser.parse_args()
 
