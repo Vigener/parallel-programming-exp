@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const int NUM_ITERATIONS = 100;
+    const int NUM_ITERATIONS = 20;
     const int MIN_BYTES = 8;
     const int MAX_BYTES = 16 * 1024 * 1024;
 
@@ -27,7 +27,17 @@ int main(int argc, char** argv) {
     for (int data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes *= 2) {
         std::vector<char> data(data_bytes, 1);
 
-        // 全員同時開始で意図的に競合を発生させる
+        // ウォームアップ通信（1回のPing-Pong）でMPI内部の初期化ノイズを除去
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rank < half) {
+            MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+            MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        } else {
+            MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+        }
+
+        // ダミー通信後に全員のタイミングを再同期してから本計測を開始
         MPI_Barrier(MPI_COMM_WORLD);
         double t_start = MPI_Wtime();
 
