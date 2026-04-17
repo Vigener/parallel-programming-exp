@@ -18,8 +18,8 @@
 # 	uv run scripts/5-2/generate_table_pingpong.py data/5-2/mpi_pingpong_local.csv assets/5-2/table_pingpong_local.typ
 # 	uv run scripts/5-2/generate_table_pingpong.py data/5-2/mpi_pingpong_crossnode.csv assets/5-2/table_pingpong_crossnode.typ
 
-# 5-2-plot-collective:
-# 	uv run scripts/5-2/plot_graph_collective.py data/5-2/mpi_collective_112.csv --pingpong-csv data/5-2/mpi_pingpong_crossnode.csv assets/5-2/graph_collective.pdf
+5-2-pdf-collective:
+	uv run scripts/5-2/plot_graph_collective.py data/5-2/mpi_collective_112.csv --pingpong-csv data/5-2/mpi_pingpong_crossnode.csv
 
 # 5-2-table-collective:
 # 	uv run scripts/5-2/generate_table_collective.py data/5-2/mpi_collective_112.csv data/5-2/mpi_pingpong_crossnode.csv assets/5-2/table_collective.typ
