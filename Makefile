@@ -24,6 +24,11 @@
 # 5-2-table-collective:
 # 	uv run scripts/5-2/generate_table_collective.py data/5-2/mpi_collective_112.csv data/5-2/mpi_pingpong_crossnode.csv assets/5-2/table_collective.typ
 
+5-2-typ:
+	uv run scripts/5-2/generate_typ_congestion.py data/5-2/mpi_congestion.csv assets/5-2/mpi_congestion.typ
+
+5-2-pdf:
+	uv run scripts/5-2/generate_pdf_congestion.py data/5-2/mpi_congestion.csv assets/5-2/mpi_congestion.pdf
 
 
 # --- 掃除 ---
