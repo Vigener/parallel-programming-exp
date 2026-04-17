@@ -9,77 +9,48 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // 競合を起こすため、プロセス数は4以上で、かつ偶数であることを要求
-    if (size < 4 || size % 2 != 0) {
-        if (rank == 0) std::cerr << "Error: Requires an even number of processes (>= 4)." << std::endl;
+    // 全プロセスを (偶数rank, 偶数rank+1) でペアにするため偶数プロセス数を要求
+    if (size < 2 || size % 2 != 0) {
+        if (rank == 0) std::cerr << "Error: Requires an even number of processes (>= 2)." << std::endl;
         MPI_Finalize();
         return 1;
     }
 
-    std::vector<int> message_sizes = {1, 10, 100, 1000, 10000, 100000, 1000000};
     const int NUM_ITERATIONS = 100;
+    const int MIN_BYTES = 8;
+    const int MAX_BYTES = 16 * 1024 * 1024;
 
-    if (rank == 0) {
-        printf("=== MPI Communication Congestion Test ===\n");
-        printf("Processes: %d (Pairs: %d)\n", size, size / 2);
-        printf("Data_Bytes\tSingle_Pair(s)\tMultiple_Pairs(s)\n");
-    }
+    const int half = size / 2;
+    // 自分のペア相手（rank i <-> rank i + size/2）
+    const int partner = (rank < half) ? rank + half : rank - half;
 
-    for (int count : message_sizes) {
-        int data_bytes = count * sizeof(double);
-        std::vector<double> data(count, 1.0);
+    for (int data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes *= 2) {
+        std::vector<char> data(data_bytes, 1);
 
-        // ==========================================
-        // 1. Single Pair (Rank 0 と 1 のみ通信、他は待機)
-        // ==========================================
+        // 全員同時開始で意図的に競合を発生させる
         MPI_Barrier(MPI_COMM_WORLD);
-        double t_start_single = MPI_Wtime();
-        
-        if (rank == 0) {
-            for (int i = 0; i < NUM_ITERATIONS; i++) {
-                MPI_Send(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
-                MPI_Recv(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            }
-        } else if (rank == 1) {
-            for (int i = 0; i < NUM_ITERATIONS; i++) {
-                MPI_Recv(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Send(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-            }
-        }
-        
-        // 全員が揃うまで待つ（1ペアの計測終了）
-        MPI_Barrier(MPI_COMM_WORLD);
-        double t_end_single = MPI_Wtime();
+        double t_start = MPI_Wtime();
 
-        // ==========================================
-        // 2. Multiple Pairs (全プロセスがペアを作って一斉に通信)
-        // ==========================================
-        MPI_Barrier(MPI_COMM_WORLD);
-        double t_start_multi = MPI_Wtime();
-        
-        // 自分のペア相手を決める（偶数は+1、奇数は-1）
-        int partner = (rank % 2 == 0) ? rank + 1 : rank - 1;
-        
         for (int i = 0; i < NUM_ITERATIONS; i++) {
-            if (rank % 2 == 0) {
-                MPI_Send(data.data(), count, MPI_DOUBLE, partner, 0, MPI_COMM_WORLD);
-                MPI_Recv(data.data(), count, MPI_DOUBLE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            if (rank < half) {
+                MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+                MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             } else {
-                MPI_Recv(data.data(), count, MPI_DOUBLE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Send(data.data(), count, MPI_DOUBLE, partner, 0, MPI_COMM_WORLD);
+                MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
             }
         }
-        
-        // 全員が揃うまで待つ（全員の通信終了）
+
         MPI_Barrier(MPI_COMM_WORLD);
-        double t_end_multi = MPI_Wtime();
+        double t_end = MPI_Wtime();
+
+        double elapsed_local = t_end - t_start;
+        double elapsed_max = 0.0;
+        MPI_Reduce(&elapsed_local, &elapsed_max, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
         if (rank == 0) {
-            // 片道(Half Trip)あたりの時間を計算して出力
-            printf("%d\t\t%f\t%f\n", 
-                   data_bytes, 
-                   (t_end_single - t_start_single) / (2.0 * NUM_ITERATIONS),
-                   (t_end_multi - t_start_multi) / (2.0 * NUM_ITERATIONS));
+            double avg_one_way_sec = elapsed_max / (2.0 * NUM_ITERATIONS);
+            std::cout << size << "," << (size / 2) << "," << data_bytes << "," << avg_one_way_sec << "\n";
         }
     }
 
