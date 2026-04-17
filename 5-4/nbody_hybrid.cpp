@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <random>
 #include <vector>
 
@@ -86,15 +87,32 @@ int main(int argc, char** argv) {
 	MPI_Bcast(particles.data(), N * static_cast<int>(sizeof(Particle)), MPI_BYTE, 0,
 						MPI_COMM_WORLD);
 
-	MPI_Comm shared_comm;
-	MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL,
-											&shared_comm);
-	int local_rank = 0;
-	MPI_Comm_rank(shared_comm, &local_rank);
-	int is_node_leader = (local_rank == 0) ? 1 : 0;
+	char processor_name[MPI_MAX_PROCESSOR_NAME];
+	int processor_name_len = 0;
+	MPI_Get_processor_name(processor_name, &processor_name_len);
+
+	std::vector<char> all_processor_names(size * MPI_MAX_PROCESSOR_NAME, '\0');
+	MPI_Allgather(processor_name, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
+							 all_processor_names.data(), MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
+							 MPI_COMM_WORLD);
+
 	int nodes = 0;
-	MPI_Allreduce(&is_node_leader, &nodes, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-	MPI_Comm_free(&shared_comm);
+	if (rank == 0) {
+		for (int i = 0; i < size; ++i) {
+			const char* current = all_processor_names.data() + i * MPI_MAX_PROCESSOR_NAME;
+			bool seen = false;
+			for (int j = 0; j < i; ++j) {
+				const char* previous = all_processor_names.data() + j * MPI_MAX_PROCESSOR_NAME;
+				if (std::strcmp(current, previous) == 0) {
+					seen = true;
+					break;
+				}
+			}
+			if (!seen) {
+				++nodes;
+			}
+		}
+	}
 
 	MPI_Barrier(MPI_COMM_WORLD);
 	const double start_time = MPI_Wtime();
