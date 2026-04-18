@@ -5,8 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <random>
 #include <vector>
+
+#include "../file_util/read_double_file.hpp"
 
 struct Particle {
 	double mass;
@@ -15,6 +16,7 @@ struct Particle {
 };
 
 int main(int argc, char** argv) {
+  // 初期作業
 	MPI_Init(&argc, &argv);
 
 	int rank = 0;
@@ -22,27 +24,67 @@ int main(int argc, char** argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-	int N = 10000;
-	if (argc > 1) {
-		N = std::atoi(argv[1]);
-	}
-
+  // 引数の処理
+	if (argc != 8 && argc != 9) {
+		if (rank == 0) {
+			std::fprintf(stderr, "usage: %s m.double x.double y.double z.double vx.double vy.double vz.double [use_dynamic]\n", argv[0]);
+		}
+		MPI_Finalize();
+		return 1;
+	} 
+  
+  // OpenMPのスケジューリングの設定(動的か静的か)
 	int use_dynamic = 0;
-	if (argc > 2) {
-		use_dynamic = std::atoi(argv[2]);
+	if (argc == 9) {
+		use_dynamic = std::atoi(argv[8]);
 	}
 
-	const int STEPS = 10;
-	const double DT = 0.01;
-	const double G = 1.0;
+  // 定数の定義
+	const int STEPS = 10; // ステップ数
+  const double DT = 1.0; // 時間ステップ
+	const double G = 1.0; // 擬似万有引力定数
+	const int MEASURE_RUNS = 10; // 計測を複数回行い平均を取るための定数
 
 	if (use_dynamic) {
-		omp_set_schedule(omp_sched_dynamic, 1);
+		omp_set_schedule(omp_sched_dynamic, 1); // 動的スケジューリング
 	} else {
-		omp_set_schedule(omp_sched_static, 0);
+		omp_set_schedule(omp_sched_static, 0); // 静的スケジューリング
 	}
 
-	const int omp_threads = omp_get_max_threads();
+	const int omp_threads = omp_get_max_threads(); // OpenMPのスレッド数を取得
+
+	std::vector<double> masses;
+	std::vector<double> xs;
+	std::vector<double> ys;
+	std::vector<double> zs;
+	std::vector<double> vxs;
+	std::vector<double> vys;
+	std::vector<double> vzs;
+	int N = 0;
+
+  // ランク0のプロセスが入力ファイルを読み込み、全プロセスにブロードキャストする
+	if (rank == 0) {
+		masses = read_double_file(argv[1]);
+		xs = read_double_file(argv[2]);
+		ys = read_double_file(argv[3]);
+		zs = read_double_file(argv[4]);
+		vxs = read_double_file(argv[5]);
+		vys = read_double_file(argv[6]);
+		vzs = read_double_file(argv[7]);
+
+		N = static_cast<int>(masses.size());
+		if (N <= 0 || xs.size() != masses.size() || ys.size() != masses.size() ||
+				zs.size() != masses.size() || vxs.size() != masses.size() ||
+				vys.size() != masses.size() || vzs.size() != masses.size()) {
+			std::fprintf(stderr, "input files must have the same number of elements\n");
+			MPI_Abort(MPI_COMM_WORLD, 1);
+		}
+	}
+
+	MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	if (N <= 0) {
+		MPI_Abort(MPI_COMM_WORLD, 1);
+	}
 
 	std::vector<int> counts(size, 0);
 	std::vector<int> displs(size, 0);
@@ -66,21 +108,16 @@ int main(int argc, char** argv) {
 		displs_bytes[r] = displs[r] * static_cast<int>(sizeof(Particle));
 	}
 
-	std::vector<Particle> particles(N);
-
+	std::vector<Particle> particles(static_cast<std::size_t>(N));
 	if (rank == 0) {
-		std::mt19937 gen(42);
-		std::uniform_real_distribution<double> position_dist(0.0, 100.0);
-		std::uniform_real_distribution<double> mass_dist(1.0, 2.0);
-
 		for (int i = 0; i < N; ++i) {
-			particles[i].x = position_dist(gen);
-			particles[i].y = position_dist(gen);
-			particles[i].z = position_dist(gen);
-			particles[i].vx = 0.0;
-			particles[i].vy = 0.0;
-			particles[i].vz = 0.0;
-			particles[i].mass = mass_dist(gen);
+			particles[static_cast<std::size_t>(i)].mass = masses[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].x = xs[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].y = ys[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].z = zs[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].vx = vxs[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].vy = vys[static_cast<std::size_t>(i)];
+			particles[static_cast<std::size_t>(i)].vz = vzs[static_cast<std::size_t>(i)];
 		}
 	}
 
@@ -114,56 +151,65 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	MPI_Barrier(MPI_COMM_WORLD);
-	const double start_time = MPI_Wtime();
+	const std::vector<Particle> initial_particles = particles;
+	double total_elapsed = 0.0;
 
-	for (int step = 0; step < STEPS; ++step) {
-		std::vector<Particle> next_particles = particles;
+	for (int run = 0; run < MEASURE_RUNS; ++run) {
+		particles = initial_particles;
 
-		#pragma omp parallel for schedule(runtime) default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
-		for (int i = start_index; i < end_index; ++i) {
-			double ax = 0.0;
-			double ay = 0.0;
-			double az = 0.0;
+		MPI_Barrier(MPI_COMM_WORLD);
+		const double start_time = MPI_Wtime();
 
-			for (int j = 0; j < N; ++j) {
-				if (i == j) {
-					continue;
+		for (int step = 0; step < STEPS; ++step) {
+			std::vector<Particle> next_particles = particles;
+
+			#pragma omp parallel for schedule(runtime) default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
+			for (int i = start_index; i < end_index; ++i) {
+				double ax = 0.0;
+				double ay = 0.0;
+				double az = 0.0;
+
+				for (int j = 0; j < N; ++j) {
+					if (i == j) {
+						continue;
+					}
+
+					const double dx = particles[j].x - particles[i].x;
+					const double dy = particles[j].y - particles[i].y;
+					const double dz = particles[j].z - particles[i].z;
+					const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
+					const double dist = std::sqrt(dist2);
+					const double f = G * particles[j].mass / dist2;
+
+					ax += f * dx / dist;
+					ay += f * dy / dist;
+					az += f * dz / dist;
 				}
 
-				const double dx = particles[j].x - particles[i].x;
-				const double dy = particles[j].y - particles[i].y;
-				const double dz = particles[j].z - particles[i].z;
-				const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
-				const double dist = std::sqrt(dist2);
-				const double f = G * particles[j].mass / dist2;
+				next_particles[i].vx = particles[i].vx + DT * ax;
+				next_particles[i].vy = particles[i].vy + DT * ay;
+				next_particles[i].vz = particles[i].vz + DT * az;
 
-				ax += f * dx / dist;
-				ay += f * dy / dist;
-				az += f * dz / dist;
+				next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
+				next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
+				next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
 			}
 
-			next_particles[i].vx = particles[i].vx + DT * ax;
-			next_particles[i].vy = particles[i].vy + DT * ay;
-			next_particles[i].vz = particles[i].vz + DT * az;
-
-			next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
-			next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
-			next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
-		}
-
-		MPI_Allgatherv(next_particles.data() + start_index,
+			MPI_Allgatherv(next_particles.data() + start_index,
 									 local_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
 									 particles.data(), counts_bytes.data(), displs_bytes.data(),
 									 MPI_BYTE, MPI_COMM_WORLD);
+		}
+
+		MPI_Barrier(MPI_COMM_WORLD);
+		const double end_time = MPI_Wtime();
+		total_elapsed += (end_time - start_time);
 	}
 
-	MPI_Barrier(MPI_COMM_WORLD);
-	const double end_time = MPI_Wtime();
-
 	if (rank == 0) {
+		const double average_elapsed = total_elapsed / static_cast<double>(MEASURE_RUNS);
 		std::printf("%d,%d,%d,%d,%.6f\n", nodes, size, omp_threads, N,
-								end_time - start_time);
+								average_elapsed);
 	}
 
 	MPI_Finalize();
