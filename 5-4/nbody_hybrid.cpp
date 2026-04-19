@@ -4,10 +4,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <fstream>
 #include <vector>
 
+// ../file_util/read_double_file.hppから、ファイルからdoubleの配列を読み込む関数をインクルード
 #include "../file_util/read_double_file.hpp"
+
 
 struct Particle {
 	double mass;
@@ -16,202 +18,178 @@ struct Particle {
 };
 
 int main(int argc, char** argv) {
-  // 初期作業
-	MPI_Init(&argc, &argv);
+	MPI_Init(&argc, &argv); // MPIの初期化
 
-	int rank = 0;
-	int size = 1;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
+  int rank, size;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank); // 自分のランク（プロセスID）を取得
+  MPI_Comm_size(MPI_COMM_WORLD, &size); // 全プロセスの数を取得
 
-  // 引数の処理
-	if (argc != 8 && argc != 9) {
-		if (rank == 0) {
-			std::fprintf(stderr, "usage: %s m.double x.double y.double z.double vx.double vy.double vz.double [use_dynamic]\n", argv[0]);
-		}
-		MPI_Finalize();
-		return 1;
-	} 
+  // 引数が足りない場合はエラーを出して終了
+  if (argc < 10) {
+    if (rank == 0) {
+      std::fprintf(stderr, "Usage: %s N nodes m_path x_path y_path z_path vx_path vy_path vz_path\n", argv[0]);
+    }
+    MPI_Finalize();
+    return 1;
+  }
+
+  // コマンドライン引数があればNとして読み込み、無ければデフォルト10000にする
+	int N = 10000;
+	if (argc > 1) {
+		N = std::atoi(argv[1]);
+	}
+
+  // コマンドライン引数からファイルパスを読み込む
+  // nodesは二番目の引数
+  const int nodes = std::atoi(argv[2]);
   
-  // OpenMPのスケジューリングの設定(動的か静的か)
-	int use_dynamic = 0;
-	if (argc == 9) {
-		use_dynamic = std::atoi(argv[8]);
-	}
+  const char* m_path = argv[3]; 
+  const char* x_path = argv[4]; 
+  const char* y_path = argv[5]; 
+  const char* z_path = argv[6];
+  const char* vx_path = argv[7];
+  const char* vy_path = argv[8];
+  const char* vz_path = argv[9];
 
-  // 定数の定義
+
 	const int STEPS = 10; // ステップ数
-  const double DT = 1.0; // 時間ステップ
-	const double G = 1.0; // 擬似万有引力定数
-	const int MEASURE_RUNS = 10; // 計測を複数回行い平均を取るための定数
+	const double DT = 1.0; // タイムステップ
+	const double G = 1.0; // 万有引力定数
 
-	if (use_dynamic) {
-		omp_set_schedule(omp_sched_dynamic, 1); // 動的スケジューリング
-	} else {
-		omp_set_schedule(omp_sched_static, 0); // 静的スケジューリング
-	}
 
-	const int omp_threads = omp_get_max_threads(); // OpenMPのスレッド数を取得
+	const int omp_threads = omp_get_max_threads();
 
-	std::vector<double> masses;
-	std::vector<double> xs;
-	std::vector<double> ys;
-	std::vector<double> zs;
-	std::vector<double> vxs;
-	std::vector<double> vys;
-	std::vector<double> vzs;
-	int N = 0;
+  
+  // 各プロセスの担当する星の数を計算
+	const int local_particle_count = N / size; // 割り切れることにする
+  if (N % size != 0) {
+    if (rank == 0) {
+      std::fprintf(stderr, "N must be divisible by MPI process count: N=%d, size=%d\n", N, size);
+    }
+    MPI_Finalize();
+    return 1;
+  }
+	const int start_index = rank * local_particle_count;
+	const int end_index = start_index + local_particle_count;
 
-  // ランク0のプロセスが入力ファイルを読み込み、全プロセスにブロードキャストする
+  std::vector<Particle> particles(N); // 全ての星の情報を全プロセスで共有するためのベクトル
+
 	if (rank == 0) {
-		masses = read_double_file(argv[1]);
-		xs = read_double_file(argv[2]);
-		ys = read_double_file(argv[3]);
-		zs = read_double_file(argv[4]);
-		vxs = read_double_file(argv[5]);
-		vys = read_double_file(argv[6]);
-		vzs = read_double_file(argv[7]);
+    std::vector<double> masses = read_double_file(m_path);
+    std::vector<double> xs = read_double_file(x_path);
+    std::vector<double> ys = read_double_file(y_path);
+    std::vector<double> zs = read_double_file(z_path);
+    std::vector<double> vxs = read_double_file(vx_path);
+    std::vector<double> vys = read_double_file(vy_path);
+    std::vector<double> vzs = read_double_file(vz_path);
 
-		N = static_cast<int>(masses.size());
-		if (N <= 0 || xs.size() != masses.size() || ys.size() != masses.size() ||
-				zs.size() != masses.size() || vxs.size() != masses.size() ||
-				vys.size() != masses.size() || vzs.size() != masses.size()) {
-			std::fprintf(stderr, "input files must have the same number of elements\n");
-			MPI_Abort(MPI_COMM_WORLD, 1);
-		}
+    // 読み込んだサイズがNと一致するか確認
+    if (masses.size() != static_cast<std::size_t>(N) ||
+        xs.size() != static_cast<std::size_t>(N) ||
+        ys.size() != static_cast<std::size_t>(N) ||
+        zs.size() != static_cast<std::size_t>(N) ||
+        vxs.size() != static_cast<std::size_t>(N) ||
+        vys.size() != static_cast<std::size_t>(N) ||
+        vzs.size() != static_cast<std::size_t>(N)) {
+      std::fprintf(stderr, "file size does not match N: %s\n", m_path);
+      MPI_Finalize();
+      return 1;
+    }
+
+    // 読み込んだデータをparticlesにコピー
+    for (int i = 0; i < N; ++i) {
+      particles[i].mass = masses[i];
+      particles[i].x = xs[i];
+      particles[i].y = ys[i];
+      particles[i].z = zs[i];
+      particles[i].vx = vxs[i];
+      particles[i].vy = vys[i];
+      particles[i].vz = vzs[i];
+    }
 	}
 
-	MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
-	if (N <= 0) {
-		MPI_Abort(MPI_COMM_WORLD, 1);
-	}
+  // 全プロセスで初期データを共有する
+	MPI_Bcast(particles.data(), N * sizeof(Particle), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-	std::vector<int> counts(size, 0);
-	std::vector<int> displs(size, 0);
-	const int base = N / size;
-	const int rem = N % size;
-	for (int r = 0; r < size; ++r) {
-		counts[r] = base + (r < rem ? 1 : 0);
-		if (r > 0) {
-			displs[r] = displs[r - 1] + counts[r - 1];
-		}
-	}
+  // 全プロセスが初期データの受け取りを終えるまで待つ
+	MPI_Barrier(MPI_COMM_WORLD);
 
-	const int local_count = counts[rank];
-	const int start_index = displs[rank];
-	const int end_index = start_index + local_count;
+  // 時間計測開始
+	const double start_time = MPI_Wtime();
 
-	std::vector<int> counts_bytes(size, 0);
-	std::vector<int> displs_bytes(size, 0);
-	for (int r = 0; r < size; ++r) {
-		counts_bytes[r] = counts[r] * static_cast<int>(sizeof(Particle));
-		displs_bytes[r] = displs[r] * static_cast<int>(sizeof(Particle));
-	}
+  // シミュレーションのメインループ
+	for (int step = 0; step < STEPS; ++step) {
+		std::vector<Particle> next_particles = particles;
 
-	std::vector<Particle> particles(static_cast<std::size_t>(N));
-	if (rank == 0) {
-		for (int i = 0; i < N; ++i) {
-			particles[static_cast<std::size_t>(i)].mass = masses[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].x = xs[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].y = ys[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].z = zs[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].vx = vxs[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].vy = vys[static_cast<std::size_t>(i)];
-			particles[static_cast<std::size_t>(i)].vz = vzs[static_cast<std::size_t>(i)];
-		}
-	}
+    #pragma omp parallel for default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
+		for (int i = start_index; i < end_index; ++i) {
+			double ax = 0.0;
+			double ay = 0.0;
+			double az = 0.0;
 
-	MPI_Bcast(particles.data(), N * static_cast<int>(sizeof(Particle)), MPI_BYTE, 0,
-						MPI_COMM_WORLD);
-
-	char processor_name[MPI_MAX_PROCESSOR_NAME];
-	int processor_name_len = 0;
-	MPI_Get_processor_name(processor_name, &processor_name_len);
-
-	std::vector<char> all_processor_names(size * MPI_MAX_PROCESSOR_NAME, '\0');
-	MPI_Allgather(processor_name, MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
-							 all_processor_names.data(), MPI_MAX_PROCESSOR_NAME, MPI_CHAR,
-							 MPI_COMM_WORLD);
-
-	int nodes = 0;
-	if (rank == 0) {
-		for (int i = 0; i < size; ++i) {
-			const char* current = all_processor_names.data() + i * MPI_MAX_PROCESSOR_NAME;
-			bool seen = false;
-			for (int j = 0; j < i; ++j) {
-				const char* previous = all_processor_names.data() + j * MPI_MAX_PROCESSOR_NAME;
-				if (std::strcmp(current, previous) == 0) {
-					seen = true;
-					break;
-				}
-			}
-			if (!seen) {
-				++nodes;
-			}
-		}
-	}
-
-	const std::vector<Particle> initial_particles = particles;
-	double total_elapsed = 0.0;
-
-	for (int run = 0; run < MEASURE_RUNS; ++run) {
-		particles = initial_particles;
-
-		MPI_Barrier(MPI_COMM_WORLD);
-		const double start_time = MPI_Wtime();
-
-		for (int step = 0; step < STEPS; ++step) {
-			std::vector<Particle> next_particles = particles;
-
-			#pragma omp parallel for schedule(runtime) default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
-			for (int i = start_index; i < end_index; ++i) {
-				double ax = 0.0;
-				double ay = 0.0;
-				double az = 0.0;
-
-				for (int j = 0; j < N; ++j) {
-					if (i == j) {
-						continue;
-					}
-
-					const double dx = particles[j].x - particles[i].x;
-					const double dy = particles[j].y - particles[i].y;
-					const double dz = particles[j].z - particles[i].z;
-					const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
-					const double dist = std::sqrt(dist2);
-					const double f = G * particles[j].mass / dist2;
-
-					ax += f * dx / dist;
-					ay += f * dy / dist;
-					az += f * dz / dist;
+			for (int j = 0; j < N; ++j) {
+				if (i == j) {
+					continue;
 				}
 
-				next_particles[i].vx = particles[i].vx + DT * ax;
-				next_particles[i].vy = particles[i].vy + DT * ay;
-				next_particles[i].vz = particles[i].vz + DT * az;
+				const double dx = particles[j].x - particles[i].x;
+				const double dy = particles[j].y - particles[i].y;
+				const double dz = particles[j].z - particles[i].z;
+				const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
+				const double dist = std::sqrt(dist2);
+				const double f = G * particles[j].mass / dist2;
 
-				next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
-				next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
-				next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
+				ax += f * dx / dist;
+				ay += f * dy / dist;
+				az += f * dz / dist;
 			}
 
-			MPI_Allgatherv(next_particles.data() + start_index,
-									 local_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
-									 particles.data(), counts_bytes.data(), displs_bytes.data(),
-									 MPI_BYTE, MPI_COMM_WORLD);
+      // 速度と位置の更新
+			next_particles[i].vx = particles[i].vx + DT * ax;
+			next_particles[i].vy = particles[i].vy + DT * ay;
+			next_particles[i].vz = particles[i].vz + DT * az;
+
+			next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
+			next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
+			next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
 		}
 
-		MPI_Barrier(MPI_COMM_WORLD);
-		const double end_time = MPI_Wtime();
-		total_elapsed += (end_time - start_time);
+    // 結果の集約(Allgatherで行う)
+    // MPI_Allgather(送るデータの先頭アドレス, 送るデータのサイズ, データの型, 受け取るデータの先頭アドレス, 受け取るデータのサイズ, データの型, コミュニケータ)
+    MPI_Allgather(&next_particles[start_index], local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
+              particles.data(), local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE, MPI_COMM_WORLD);
+    // これにより、共有されている変数particlesが全てのプロセスで更新される
 	}
 
+	MPI_Barrier(MPI_COMM_WORLD); // 全プロセスが計算を終えるまで待つ
+
+  // 時間計測終了
+	const double end_time = MPI_Wtime();
+
+  // 結果の出力
 	if (rank == 0) {
-		const double average_elapsed = total_elapsed / static_cast<double>(MEASURE_RUNS);
+		// CSV形式の計時結果
 		std::printf("%d,%d,%d,%d,%.6f\n", nodes, size, omp_threads, N,
-								average_elapsed);
+								end_time - start_time);
+		
+		// 最終位置をバイナリファイルに保存（検証用）
+		std::ofstream outx("output_x.double", std::ios::binary);
+		std::ofstream outy("output_y.double", std::ios::binary);
+		std::ofstream outz("output_z.double", std::ios::binary);
+		
+		for (int i = 0; i < N; ++i) {
+			double x = particles[i].x;
+			double y = particles[i].y;
+			double z = particles[i].z;
+			outx.write(reinterpret_cast<const char*>(&x), sizeof(double));
+			outy.write(reinterpret_cast<const char*>(&y), sizeof(double));
+			outz.write(reinterpret_cast<const char*>(&z), sizeof(double));
+		}
+		outx.close();
+		outy.close();
+		outz.close();
 	}
 
-	MPI_Finalize();
+	MPI_Finalize(); // MPIの終了
 	return 0;
 }
