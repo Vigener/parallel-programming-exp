@@ -19,8 +19,9 @@ run_exp() {
     # --map-by ppr:X:node:PE=N は 1ノードあたりXプロセス、1プロセスあたりNコアを割当
     local procs_per_node=$2
     local omp_threads=$3
-    local particles=1000  # 固定の粒子数
-    local data_dir="./grav_data/n${particles}"
+    local run_particles=896
+    local source_particles=1000
+    local data_dir="./grav_data/n${source_particles}"
 
     export OMP_NUM_THREADS=${omp_threads}
     # -N はノード数、-n は全体のMPIプロセス数
@@ -32,7 +33,7 @@ run_exp() {
         --map-by ppr:${procs_per_node}:node:PE=${omp_threads} \
         --bind-to core \
         ./nbody_hybrid \
-        ${particles} \
+        ${run_particles} \
         ${nodes} \
         ${data_dir}/m.double \
         ${data_dir}/x.double \

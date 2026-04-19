@@ -75,13 +75,13 @@ int main(int argc, char** argv) {
   std::vector<Particle> particles(N); // 全ての星の情報を全プロセスで共有するためのベクトル
 
 	if (rank == 0) {
-    std::vector<double> masses = read_double_file(m_path);
-    std::vector<double> xs = read_double_file(x_path);
-    std::vector<double> ys = read_double_file(y_path);
-    std::vector<double> zs = read_double_file(z_path);
-    std::vector<double> vxs = read_double_file(vx_path);
-    std::vector<double> vys = read_double_file(vy_path);
-    std::vector<double> vzs = read_double_file(vz_path);
+  std::vector<double> masses = read_double_file(m_path, static_cast<std::size_t>(N));
+  std::vector<double> xs = read_double_file(x_path, static_cast<std::size_t>(N));
+  std::vector<double> ys = read_double_file(y_path, static_cast<std::size_t>(N));
+  std::vector<double> zs = read_double_file(z_path, static_cast<std::size_t>(N));
+  std::vector<double> vxs = read_double_file(vx_path, static_cast<std::size_t>(N));
+  std::vector<double> vys = read_double_file(vy_path, static_cast<std::size_t>(N));
+  std::vector<double> vzs = read_double_file(vz_path, static_cast<std::size_t>(N));
 
     // 読み込んだサイズがNと一致するか確認
     if (masses.size() != static_cast<std::size_t>(N) ||
