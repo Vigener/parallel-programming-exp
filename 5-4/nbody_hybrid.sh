@@ -19,8 +19,8 @@ run_exp() {
     # --map-by ppr:X:node:PE=N は 1ノードあたりXプロセス、1プロセスあたりNコアを割当
     local procs_per_node=$2
     local omp_threads=$3
-    local run_particles=896
-    local source_particles=1000
+    local run_particles=$4
+    local source_particles=$5
     local data_dir="./grav_data/n${source_particles}"
 
     export OMP_NUM_THREADS=${omp_threads}
@@ -44,25 +44,33 @@ run_exp() {
         ${data_dir}/vz.double
 }
 
-# １ノード
-run_exp 1 28 1
-run_exp 1 4 7
-run_exp 1 2 14
-run_exp 1 1 28
+run_particles_list=(896 2688 8960 26880)
+source_particles_list=(1000 3072 10000 30720)
 
-# ２ノード
-run_exp 2 28 1
-run_exp 2 4 7
-run_exp 2 2 14
-run_exp 2 1 28
+for idx in "${!run_particles_list[@]}"; do
+    run_particles=${run_particles_list[$idx]}
+    source_particles=${source_particles_list[$idx]}
 
-# ４ノード
-run_exp 4 28 1
-run_exp 4 4 7
-run_exp 4 2 14
-run_exp 4 1 28
+    # １ノード
+    run_exp 1 28 1 "${run_particles}" "${source_particles}"
+    run_exp 1 4 7 "${run_particles}" "${source_particles}"
+    run_exp 1 2 14 "${run_particles}" "${source_particles}"
+    run_exp 1 1 28 "${run_particles}" "${source_particles}"
 
-# 28コア全開 vs 27コア (OS Jitter回避)
-run_exp 1 1 27
-run_exp 2 1 27
-run_exp 4 1 27
+    # ２ノード
+    run_exp 2 28 1 "${run_particles}" "${source_particles}"
+    run_exp 2 4 7 "${run_particles}" "${source_particles}"
+    run_exp 2 2 14 "${run_particles}" "${source_particles}"
+    run_exp 2 1 28 "${run_particles}" "${source_particles}"
+
+    # ４ノード
+    run_exp 4 28 1 "${run_particles}" "${source_particles}"
+    run_exp 4 4 7 "${run_particles}" "${source_particles}"
+    run_exp 4 2 14 "${run_particles}" "${source_particles}"
+    run_exp 4 1 28 "${run_particles}" "${source_particles}"
+
+    # 28コア全開 vs 27コア (OS Jitter回避)
+    run_exp 1 1 27 "${run_particles}" "${source_particles}"
+    run_exp 2 1 27 "${run_particles}" "${source_particles}"
+    run_exp 4 1 27 "${run_particles}" "${source_particles}"
+done
