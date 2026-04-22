@@ -90,68 +90,68 @@ lim_(p arrow.r oo) E\(p\)= lim_(p arrow.r oo) 1 / p dot.op frac(T_s + T_p, T_s +
 
 === 配列サイズNを変化させて、性能評価を行うコード。
 
-- `openmp_tasks.cpp`:
+- #link(<openmp_tasks.cppのコード>)[openmp_tasks.cpp]: 
   (a),(b),(c)の時間を計測するコード。スレッド数は１で固定し、配列のサイズ(N)を変化させて計測する。
   時間の計測は、`omp_get_wtime`関数を使用した。
   - \(a), (b): $N =\[10\,1000\,10^6\,10^7\,10^8\]$
   - \(c): $m = k = n =\[10\,100\,500\,1000\]$
-- `openmp_tasks.sh`: `openmp_tasks.cpp`を実行するシェルスクリプト。
+- #link(<openmp_tasks.shのコード>)[openmp_tasks.sh]: `openmp_tasks.cpp`を実行するシェルスクリプト。
   - スレッド数は1。
   - それぞれの計測を5回ずつ実行し、平均値を取るようにした。
 
-=== 配列サイズを固定して、スレッド数を変化させる場合の性能評価を行うコード
+// === 配列サイズを固定して、スレッド数を変化させる場合の性能評価を行うコード
 
-#strong[ソースコードのエッセンス抜粋（openmp_tasks.cpp）]
+// #strong[ソースコードの要素抜粋（openmp_tasks.cpp）]
 
-```cpp
-// 必要なライブラリを読み込む（<iostream>, <vector>, <cmath>, <omp.h>）
+// ```cpp
+// // 必要なライブラリを読み込む（<iostream>, <vector>, <cmath>, <omp.h>）
 
-double get_time() { return omp_get_wtime(); }
+// double get_time() { return omp_get_wtime(); }
 
-// (a) 整数配列の総和（Int版）
-void task_a_int(int n, const std::vector<int>& data) {
-  int sum = 0;
-  double start = get_time();
-  #pragma omp parallel for reduction(+:sum)
-  for (int i = 0; i < n; i++) sum += data[i];
-  std::cout << "A_Int, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
-}
-// task_a_float(...) も実装済み：型を float/double に変えた同様の実装
+// // (a) 整数配列の総和（Int版）
+// void task_a_int(int n, const std::vector<int>& data) {
+//   int sum = 0;
+//   double start = get_time();
+//   #pragma omp parallel for reduction(+:sum)
+//   for (int i = 0; i < n; i++) sum += data[i];
+//   std::cout << "A_Int, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
+// }
+// // task_a_float(...) も実装済み：型を float/double に変えた同様の実装
 
-// (b) 1/m * sin(1/m) の総和
-void task_b(int n) {
-  double sum = 0.0;
-  double start = get_time();
-  #pragma omp parallel for reduction(+:sum)
-  for (int m = 1; m <= n; m++) {
-    double v = 1.0 / m;
-    sum += v * std::sin(v);
-  }
-  std::cout << "B, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
-}
+// // (b) 1/m * sin(1/m) の総和
+// void task_b(int n) {
+//   double sum = 0.0;
+//   double start = get_time();
+//   #pragma omp parallel for reduction(+:sum)
+//   for (int m = 1; m <= n; m++) {
+//     double v = 1.0 / m;
+//     sum += v * std::sin(v);
+//   }
+//   std::cout << "B, " << omp_get_max_threads() << ", " << n << ", " << get_time() - start << std::endl;
+// }
 
-// (c) 行列積 C = A * B
-void task_c(int m, int k, int n, const std::vector<std::vector<double>>& A,
-            const std::vector<std::vector<double>>& B, std::vector<std::vector<double>>& C) {
-  double start = get_time();
-  #pragma omp parallel for
-  for (int i = 0; i < m; i++)
-    for (int j = 0; j < n; j++) {
-      double tmp = 0.0;
-      for (int l = 0; l < k; l++) tmp += A[i][l] * B[l][j];
-      C[i][j] = tmp;
-    }
-  std::cout << "C, " << omp_get_max_threads() << ", " << m << "x" << n << ", " << get_time() - start << std::endl;
-}
+// // (c) 行列積 C = A * B
+// void task_c(int m, int k, int n, const std::vector<std::vector<double>>& A,
+//             const std::vector<std::vector<double>>& B, std::vector<std::vector<double>>& C) {
+//   double start = get_time();
+//   #pragma omp parallel for
+//   for (int i = 0; i < m; i++)
+//     for (int j = 0; j < n; j++) {
+//       double tmp = 0.0;
+//       for (int l = 0; l < k; l++) tmp += A[i][l] * B[l][j];
+//       C[i][j] = tmp;
+//     }
+//   std::cout << "C, " << omp_get_max_threads() << ", " << m << "x" << n << ", " << get_time() - start << std::endl;
+// }
 
-int main() {
-  // 配列のサイズ(N) を変えながら、それぞれの task_*() を実行
-  // - A(Int), A(Float): N = {10, 1000, 1e6, 1e7, 1e8}
-  // - B:              N = {10, 1000, 1e6, 1e7, 1e8}
-  // - C:              size = {10, 100, 500, 1000}
-  // （初期化とループ本体は省略）
-}
-```
+// int main() {
+//   // 配列のサイズ(N) を変えながら、それぞれの task_*() を実行
+//   // - A(Int), A(Float): N = {10, 1000, 1e6, 1e7, 1e8}
+//   // - B:              N = {10, 1000, 1e6, 1e7, 1e8}
+//   // - C:              size = {10, 100, 500, 1000}
+//   // （初期化とループ本体は省略）
+// }
+// ```
 
 ※掲載は要点のみ。全体コードは最終版でGitHubリンク（コミットハッシュ付き）を併記予定。
 
@@ -440,13 +440,13 @@ A_Int, 2, 1000000, 0.000411857
 
 === コードの説明
 
-- `mpi_pingpong.cpp`: MPIを用いて、プロセス間でPing-Pong通信を行い、片道の通信時間を計測するコード。
+- #link(<mpi_pingpong.cppのコード>)[mpi_pingpong.cpp]: MPIを用いて、プロセス間でPing-Pong通信を行い、片道の通信時間を計測するコード。
   - データサイズNを8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216 Bytesの順に変化させて、通信時間を計測する。
   - 通信時間の計測は、MPIの`MPI_Wtime`関数を使用して行う。
   - データサイズが小さい場合は1000回、データサイズが中程度の場合は500回、データサイズが大きい場合は100回の往復通信を行い、その平均値を片道の通信時間として算出する。
-- `mpi_pingpong_local.sh`: `mpi_pingpong.cpp`をノード内通信の条件で実行するシェルスクリプト。
+- #link(<mpi_pingpong_local.shのコード>)[mpi_pingpong_local.sh]: `mpi_pingpong.cpp`をノード内通信の条件で実行するシェルスクリプト。
   - `mpirun -N 1 -n 2`で同一ノード上の2プロセスを使用して通信を行う。
-- `mpi_pingpong_crossnode.sh`: `mpi_pingpong.cpp`をノード間通信の条件で実行するシェルスクリプト。
+- #link(<mpi_pingpong_crossnode.shのコード>)[mpi_pingpong_crossnode.sh]: `mpi_pingpong.cpp`をノード間通信の条件で実行するシェルスクリプト。
   - `mpirun -N 2 -n 2`で別ノード上の2プロセスを使用して通信を行う。
 
 === 実行方法:
@@ -510,7 +510,7 @@ CSV形式で出力したものをもとに、以下のような表を作成し�
   - `mpirun -N 4 -n 16`で4ノード構成の16プロセスを使用して通信を行う。
 
 === コードの説明:
-- `mpi_collective.cpp`: MPIを用いて、プロセス間で以下の集団通信を行い、通信時間を計測するコード。
+- #link(<mpi_collective.cppのコード>)[mpi_collective.cpp]: MPIを用いて、プロセス間で以下の集団通信を行い、通信時間を計測するコード。
   - データサイズNを8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216 Bytesの順に変化させて、通信時間を計測する。
   - 通信時間の計測は、MPIの`MPI_Wtime`関数を使用して行う。
   - 集団通信の種類は、以下の4種類を実装した。
@@ -518,7 +518,7 @@ CSV形式で出力したものをもとに、以下のような表を作成し�
     - MPI_Bcast: MPIの組み込み関数`MPI_Bcast`を使用したブロードキャスト。
     - MPI_Allgather: MPIの組み込み関数`MPI_Allgather`を使用した全員集約通信。
   - 測定は、各データサイズに対して100回の通信を行い、その平均値を通信時間として算出する。
-- `mpi_collective.sh`: `mpi_collective.cpp`を実行するシェルスクリプト。
+- #link(<mpi_collective.shのコード>)[mpi_collective.sh]: `mpi_collective.cpp`を実行するシェルスクリプト。
   - `mpirun -N 4 -n 16`で4ノード構成の16プロセスを使用して通信を行う。
   - プロセス数を[2 4 8 16 32 64]で変化させて、`mpi_collective.cpp`を実行するようにした。
 
@@ -584,12 +584,12 @@ $ sbatch mpi_collective.sh
 
 === コードの説明:
 
-- `mpi_congestion.cpp`: MPIを用いて、複数のプロセスが同時に通信を行う場合の通信時間を計測するコード。
+- #link(<mpi_congestion.cppのコード>)[mpi_congestion.cpp]: MPIを用いて、複数のプロセスが同時に通信を行う場合の通信時間を計測するコード。
   - データサイズNを8~16MBの範囲で変化させて、通信時間を計測する。
   - ペア通信については、例えば、プロセス数が32なら、プロセス0とプロセス16が通信を行う、プロセス1とプロセス17が通信を行う、というように、隣同士（ノード内）にならないように通信ペアを設定した。
   - 通信時間計測の前に、通信のウォームアップとして、各プロセスが1回通信を行うようにした。
   - 通信は、各データサイズに対して100回の通信を行い、その平均値を通信時間として算出する。
-- `mpi_congestion.sh`: `mpi_congestion.cpp`を実行するシェルスクリプト。
+- #link(<mpi_congestion.shのコード>)[mpi_congestion.sh]: `mpi_congestion.cpp`を実行するシェルスクリプト。
   - `mpirun -N 4`で4ノードを使用して通信を行う。
   - プロセス数を[2 4 8 16 32]で変化させて、`mpi_congestion.cpp`を実行するようにした。
 
@@ -792,3 +792,552 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
 
 = 課題 6：
 #strong[実験全体を通して得られた事項についてまとめよ．例えば，並列化手法に対する考え，プログラムの実行時間と通信時間との関係など，気がついたことを述べよ．最後にこの実験を通して得られた自分なりの結論をまとめよ．]
+
+= ソースコード
+
+// 数値的な結果（時間測定の評価結果等）については，データを表，及びグラフの両方で示すこ
+// と．但し，データ数が少なくグラフにするのが適当でないようなものについては，表のみで良い．
+// また，測定に用いたプログラムは全て記述すること．但し，文中に差し込むのではなく，レポート
+// の末尾に付録として添付し，各プログラムに番号をつけ，本文中ではその番号を参照しながら対応
+// 付けを行うこと．
+// 
+== 課題2のソースコード
+
+- #link(<openmp_tasks.cppのコード>)[openmp_tasks.cpp]
+- #link(<openmp_tasks.shのコード>)[openmp_tasks.sh]
+
+// `openmp_tasks.cpp`のコードをここに記載する。
+
+=== openmp_tasks.cpp
+<openmp_tasks.cppのコード>
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <omp.h>
+
+// 時間計測用ヘルパー関数 (OpenMP仕様)
+double get_time() {
+    return omp_get_wtime();
+}
+
+// (a) 配列データの総和を求めよ (整数)
+void task_a_int(int n, const std::vector<int>& data) {
+    int sum = 0;
+    double start = get_time();
+
+    #pragma omp parallel for reduction(+:sum)
+    for (int i = 0; i < n; i++) {
+        sum += data[i];
+    }
+
+    double end = get_time();
+
+    std::cout << "A_Int, " << omp_get_max_threads() << ", " << n << ", " << end - start << std::endl;
+}
+
+void task_a_float(int n, const std::vector<float>& data) {
+    double sum = 0.0;
+    double start = get_time();
+
+    #pragma omp parallel for reduction(+:sum)
+    for (int i = 0; i < n; i++) {
+        sum += data[i];
+    }
+    double end = get_time();
+
+    std::cout << "A_Float, " << omp_get_max_threads() << ", " << n << ", " << end - start << std::endl;
+}
+
+// (b) 配列データに適当な重みの関数を作用させ総和を求める
+void task_b(int n) {
+    double sum = 0.0;
+    double start = get_time();
+
+    #pragma omp parallel for reduction(+:sum)
+    for (int m = 1; m <= n; m++) {
+        double val = 1.0 / m;
+        sum += val * std::sin(val);
+    }
+
+    double end = get_time();
+    // printf("[Task B] Weighted Sum: %f, Time: %f sec\n", sum, end - start);
+    std::cout << "B, " << omp_get_max_threads() << ", " << n << ", " << end - start << std::endl;
+}
+
+// (c) 行列の積 (C = A * B)
+// A(m x k), B(k x n), C(m x n) とする
+void task_c(int m, int k, int n, const std::vector<std::vector<double>>& A, const std::vector<std::vector<double>>& B, std::vector<std::vector<double>>& C) {
+    double start = get_time();
+
+    #pragma omp parallel for
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            double temp = 0.0;
+            for (int l = 0; l < k; l++) {
+                temp += A[i][l] * B[l][j];
+            }
+            C[i][j] = temp;
+        }
+    }
+
+    double end = get_time();
+    
+    std::cout << "C, " << omp_get_max_threads() << ", " << m << "x" << n << ", " << end - start << std::endl;
+}
+int main() {
+    // --- 検証するデータサイズのリスト ---
+    // Task A, B用
+    std::vector<int> sizes_A_Int_and_B = {10, 1000, 1000000, 10000000, 100000000};
+    std::vector<int> sizes_A_float = {10, 1000, 1000000, 10000000, 100000000};
+    
+    // Task C用
+    std::vector<int> sizes_C = {10, 100, 500, 1000};
+
+    for (int n : sizes_A_Int_and_B) {
+        std::vector<int> data_a(n, 1); // データ確保
+        task_a_int(n, data_a);
+    }
+
+    for (int n : sizes_A_float) {
+        std::vector<float> data_a(n, 1.0f); // データ確保
+        task_a_float(n, data_a);
+    }
+
+    for (int n : sizes_A_Int_and_B) {
+        task_b(n);
+    }
+
+    for (int size : sizes_C) {
+        int m = size, k = size, n = size;
+        std::vector<std::vector<double>> A(m, std::vector<double>(k, 1.0)); // Aを1で初期化
+        std::vector<std::vector<double>> B(k, std::vector<double>(n, 1.0)); // Bを1で初期化
+        std::vector<std::vector<double>> C(m, std::vector<double>(n, 0.0)); // Cを0で初期化
+        task_c(m, k, n, A, B, C);
+    }
+
+    return 0;
+}
+```
+
+=== openmp_tasks.sh
+<openmp_tasks.shのコード>
+
+これのみ、`.sh`で平均化しているが、これ以降は、`.cpp`内で平均化するようにした。
+
+```sh
+#!/bin/bash
+#SBATCH -J openmp_test       # ジョブの名前（自分でわかりやすい名前）
+#SBATCH -N 1                 # 使用するノード数（OpenMPは1ノード内で完結させるので1）
+#SBATCH -n 1                 # タスク数（MPIプロセスの数。今回はOpenMPだけなので1）
+#SBATCH -c 28                # 1タスクあたりのコア数（スレッド数）
+#SBATCH -o out/openmp_tasks_%j.out        # 実行結果の保存先（%j は自動的に割り当てられるジョブIDの数字に変わる）
+#SBATCH -p ppx2
+#SBATCH -w ppx2-00
+
+# Slurmが確保してくれたコア数を、OpenMPのスレッド数として環境変数にセットする
+# 2の累乗で増やしつつ、物理限界（28）とその直前（24）を観測し、その後オーバーヘッド（32〜）を観測する
+THREADS=(1 2 4 8 16 24 28 32 64 128)
+# THREADS=(1 2)
+RUNS=2
+
+AVG_CSV="out/openmp_tasks_avg.csv"
+
+if [ "$RUNS" -lt 1 ]; then
+        echo "RUNS must be >= 1"
+        exit 1
+fi
+
+mkdir -p out
+
+TMP_DATA=$(mktemp)
+trap 'rm -f "$TMP_DATA"' EXIT
+
+# 1) 各スレッド数でRUNS回ずつ実行し、一時ファイルに追記する
+for t in "${THREADS[@]}"; do
+        export OMP_NUM_THREADS="$t"
+        for r in $(seq 1 "$RUNS"); do
+                ./openmp_tasks >> "$TMP_DATA"
+        done
+done
+
+# 2) 平均CSVを作る（ヘッダーは最後に付ける）
+{
+        echo "Task,Threads,N,AvgTime(sec),Runs"
+        awk -F',' '
+        {
+                task = $1
+                threads = $2
+                n = $3
+                time = $4
+
+                gsub(/^[ \t]+|[ \t]+$/, "", task)
+                gsub(/^[ \t]+|[ \t]+$/, "", threads)
+                gsub(/^[ \t]+|[ \t]+$/, "", n)
+                gsub(/^[ \t]+|[ \t]+$/, "", time)
+
+                key = task "," threads "," n
+                sum[key] += time + 0
+                cnt[key] += 1
+        }
+        END {
+                for (k in sum) {
+                        printf "%s,%.9f,%d\n", k, sum[k] / cnt[k], cnt[k]
+                }
+        }
+        ' "$TMP_DATA" | sort -t',' -k1,1 -k2,2n -k3,3
+} > "$AVG_CSV"
+
+# 3) 平均だけ表示
+cat "$AVG_CSV"
+```
+
+== 課題2のソースコード
+- 5.2 (a)(b) のソースコード
+  - #link(<mpi_pingpong.cppのコード>)[mpi_pingpong.cpp]
+  - #link(<mpi_pingpong_local.shのコード>)[mpi_pingpong_local.sh]
+  - #link(<mpi_pingpong_crossnode.shのコード>)[mpi_pingpong_crossnode.sh]
+- 5.2 (d) のソースコード
+  - #link(<mpi_collective.cppのコード>)[mpi_collective.cpp]
+  - #link(<mpi_collective.shのコード>)[mpi_collective.sh]
+- 5.2 (e) のソースコード
+  - #link(<mpi_congestion.cppのコード>)[mpi_congestion.cpp]
+  - #link(<mpi_congestion.shのコード>)[mpi_congestion.sh]
+
+
+=== 5.2 (a)(b) のソースコード
+
+==== mpi_pingpong.cpp
+<mpi_pingpong.cppのコード>
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <mpi.h>
+
+int main(int argc, char** argv) {
+  // MPIの初期化(全員が個室に入るイメージ)
+  MPI_Init(&argc, &argv);
+
+  int rank, size;
+
+  // 自分が何番目のプロセス（個室）かを取得
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  // 全体でいくつのプロセスがあるかを取得
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+  // Ping-Pongは２者間で行うので、プロセス数が2でない場合はエラー
+  if (size != 2) {
+    if (rank == 0) {
+      std::cerr << "Error: This program requires exactly 2 processes." << std::endl;
+    }
+    MPI_Finalize(); // MPIの終了(全員が個室から出るイメージ)
+    return 1;
+  }
+
+  const std::size_t MIN_BYTES = 8;
+  const std::size_t MAX_BYTES = 16 * 1024 * 1024; // 16 MB
+  const int WARMUP_ITERATIONS = 10;
+
+  if (rank == 0) {
+    std::cout << "DataSize_Bytes,Time_sec" << std::endl;
+  }
+
+  for (std::size_t data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes <<= 1) {
+    int count = static_cast<int>(data_bytes / sizeof(double));
+
+    // 条件に合わせて、各サイズで 100〜1000 回の往復を行う
+    int num_iterations = 100;
+    if (data_bytes <= 64 * 1024) {
+      num_iterations = 1000;
+    } else if (data_bytes <= 1024 * 1024) {
+      num_iterations = 500;
+    }
+
+    // 送受信用のデータ箱を用意
+    std::vector<double> data(count, 1.0);
+
+    MPI_Barrier(MPI_COMM_WORLD); // 全プロセスがここまで来るのを待つ
+
+    // 初回の影響を減らすため軽くウォームアップ
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      if (rank == 0) {
+        MPI_Send(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (rank == 1) {
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // 時間計測開始
+    double start_time = MPI_Wtime();
+    for (int i = 0; i < num_iterations; i++) {
+      if (rank == 0) {
+        // プロセス0がプロセス1にデータを送る
+        // MPI_Send(送るデータ, 要素数, 型, 宛先, タグ, コミュニケータ)
+        MPI_Send(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+        // プロセス1からの返信を待つ
+        // MPI_Recv(受け取る変数, 要素数, 型, 送り主, タグ, コミュニケータ, ステータス)
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (rank == 1) {
+        // プロセス1がプロセス0からデータを受け取る
+        MPI_Recv(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // プロセス0にデータを返信する
+        MPI_Send(data.data(), count, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+      }
+    }
+    // 時間計測終了
+    double end_time = MPI_Wtime();
+
+    if (rank == 0) {
+      // 往復時間(Ping-Pong)の合計を、回数*2 で割り、片道(Tcomm)の時間を算出
+       double time_per_half_trip = (end_time - start_time) / (2.0 * num_iterations);
+      std::cout << data_bytes << "," << time_per_half_trip << std::endl;
+    }
+  }
+
+  // 最後全員で退出
+  MPI_Finalize();
+  return 0;
+}
+```
+
+==== mpi_pingpong_local.sh
+<mpi_pingpong_local.shのコード>
+
+```sh
+#!/bin/bash
+#SBATCH -J mpi_pingpong_local      # ジョブ名
+#SBATCH -p ppx2
+#SBATCH -N 1
+#SBATCH -n 2
+#SBATCH --nodelist=ppx2-00
+#SBATCH -o out/mpi_pingpong_local_%j.out        # 結果の出力
+
+# 実行時にもMPI環境をロードする必要がある
+module load openmpi
+
+# mpirun実行 (-npを書かなくても、Slurmの -n 2 の指示を自動で読み取って2プロセス立ち上げます)
+mpirun ./mpi_pingpong
+```
+
+==== mpi_pingpong_crossnode.sh
+<mpi_pingpong_crossnode.shのコード>
+
+```sh
+#!/bin/bash
+#SBATCH -J mpi_pingpong_crossnode      # ジョブ名
+#SBATCH -p ppx2
+#SBATCH -N 2
+#SBATCH -n 2
+#SBATCH --ntasks-per-node=1
+#SBATCH --nodelist=ppx2-00,ppx2-01
+#SBATCH -o out/mpi_pingpong_crossnode_%j.out        # 結果の出力
+
+# 実行時にもMPI環境をロードする必要がある
+module load openmpi
+
+# mpirun実行 (-npを書かなくても、Slurmの -n 2 の指示を自動で読み取って2プロセス立ち上げます)
+mpirun ./mpi_pingpong
+```
+
+=== 5.2 (d) のソースコード
+
+==== mpi_collective.cpp
+<mpi_collective.cppのコード>
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <mpi.h>
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); // (memo) 各プロセス君に対して、自分が何番であるかを教えて、rankに保存する
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // 集団通信の違いを見るため、最低でも3プロセス以上での実行
+    if (size < 2) {
+        if (rank == 0) std::cerr << "Error: Requires at least 2 processes." << std::endl;
+        MPI_Finalize(); return 1;
+    }
+
+    const int NUM_ITERATIONS = 100;
+    const int MIN_BYTES = 8;
+    const int MAX_BYTES = 16 * 1024 * 1024;
+
+    for (int data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes *= 2) {
+        std::vector<char> send_data(data_bytes, 1);
+        std::vector<char> recv_data_allgather(static_cast<size_t>(data_bytes) * static_cast<size_t>(size), 0);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        double t_start_manual = MPI_Wtime();
+        for (int i = 0; i < NUM_ITERATIONS; i++) {
+            if (rank == 0) {
+                for (int target = 1; target < size; target++) {
+                    MPI_Send(send_data.data(), data_bytes, MPI_BYTE, target, 0, MPI_COMM_WORLD);
+                }
+            } else {
+                MPI_Recv(send_data.data(), data_bytes, MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            }
+        }
+        double t_end_manual = MPI_Wtime();
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        double t_start_bcast = MPI_Wtime();
+        for (int i = 0; i < NUM_ITERATIONS; i++) {
+            MPI_Bcast(send_data.data(), data_bytes, MPI_BYTE, 0, MPI_COMM_WORLD);
+        }
+        double t_end_bcast = MPI_Wtime();
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        double t_start_allgather = MPI_Wtime();
+        for (int i = 0; i < NUM_ITERATIONS; i++) {
+            MPI_Allgather(send_data.data(), data_bytes, MPI_BYTE,
+                          recv_data_allgather.data(), data_bytes, MPI_BYTE, MPI_COMM_WORLD);
+        }
+        double t_end_allgather = MPI_Wtime();
+
+        double time_manual = (t_end_manual - t_start_manual) / NUM_ITERATIONS;
+        double time_bcast = (t_end_bcast - t_start_bcast) / NUM_ITERATIONS;
+        double time_allgather = (t_end_allgather - t_start_allgather) / NUM_ITERATION S;
+
+        if (rank == 0) {
+            printf("%d,Manual_Bcast,%d,%.9f\n", size, data_bytes, time_manual);
+            printf("%d,MPI_Bcast,%d,%.9f\n", size, data_bytes, time_bcast);
+            printf("%d,MPI_Allgather,%d,%.9f\n", size, data_bytes, time_allgather);
+        }
+    }
+
+    MPI_Finalize();
+    return 0;
+}
+```
+
+==== mpi_collective.sh
+<mpi_collective.shのコード>
+
+```sh
+#!/bin/bash
+#SBATCH -J mpi_collective
+#SBATCH -N 4 # 4台の計算ノード全てを要求
+#SBATCH -p ppx2
+#SBATCH -w ppx2-[00-03]
+#SBATCH -o out/mpi_collective_%j.out
+#SBATCH --ntasks=64
+
+module load openmpi
+
+mkdir -p out
+
+echo "Processes,Method,DataSize_Bytes,AvgTime_sec"
+
+for process_count in 2 4 8 16 32 64; do
+	mpirun -n "${process_count}" ./mpi_collective
+done
+```
+
+=== 5.2 (e) のソースコード
+
+==== mpi_congestion.cpp
+<mpi_congestion.cppのコード>
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <mpi.h>
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // 全プロセスを (偶数rank, 偶数rank+1) でペアにするため偶数プロセス数を要求
+    if (size < 2 || size % 2 != 0) {
+        if (rank == 0) std::cerr << "Error: Requires an even number of processes (>= 2)." << std::endl;
+        MPI_Finalize();
+        return 1;
+    }
+
+    const int NUM_ITERATIONS = 20;
+    const int MIN_BYTES = 8;
+    const int MAX_BYTES = 16 * 1024 * 1024;
+
+    const int half = size / 2;
+    // 自分のペア相手（rank i <-> rank i + size/2）
+    const int partner = (rank < half) ? rank + half : rank - half;
+
+    for (int data_bytes = MIN_BYTES; data_bytes <= MAX_BYTES; data_bytes *= 2) {
+        std::vector<char> data(data_bytes, 1);
+
+        // ウォームアップ通信（1回のPing-Pong）でMPI内部の初期化ノイズを除去
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rank < half) {
+            MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+            MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        } else {
+            MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+        }
+
+        // ダミー通信後に全員のタイミングを再同期してから本計測を開始
+        MPI_Barrier(MPI_COMM_WORLD);
+        double t_start = MPI_Wtime();
+
+        for (int i = 0; i < NUM_ITERATIONS; i++) {
+            if (rank < half) {
+                MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+                MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            } else {
+                MPI_Recv(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Send(data.data(), data_bytes, MPI_BYTE, partner, 0, MPI_COMM_WORLD);
+            }
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        double t_end = MPI_Wtime();
+
+        double elapsed_local = t_end - t_start;
+        double elapsed_max = 0.0;
+        MPI_Reduce(&elapsed_local, &elapsed_max, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            double avg_one_way_sec = elapsed_max / (2.0 * NUM_ITERATIONS);
+            std::cout << size << "," << (size / 2) << "," << data_bytes << "," << avg_one_way_sec << "\n";
+        }
+    }
+
+    MPI_Finalize();
+    return 0;
+}
+```
+
+==== mpi_congestion.sh
+<mpi_congestion.shのコード>
+```sh
+#!/bin/bash
+#SBATCH -J mpi_congestion
+#SBATCH -N 4
+#SBATCH -p ppx2
+#SBATCH -w ppx2-[00-03]
+#SBATCH -o out/mpi_congestion_%j.out
+#SBATCH --ntasks=64
+
+module load openmpi
+
+mkdir -p out
+
+echo "Processes,Pairs,DataSize_Bytes,AvgTime_sec"
+
+for P in 2 4 8 16 32 64; do
+	mpirun -n "$P" ./mpi_congestion
+done
+```
