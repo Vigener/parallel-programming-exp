@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "ms-vscode.cpptools",
+    "rust-lang.rust-analyzer",
+    "myriad-dreamin.tinymist",
+    "tomoki1207.pdf",
+    "github.copilot",
+    "ms-python.python",
+    "mkhl.direnv",
+    "jnoortheen.nix-ide" // ← これを追記
+  ]
+}
