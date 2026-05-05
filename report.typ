@@ -24,7 +24,7 @@
 //   radius: 6pt,             // 角の丸み
 //   stroke: rgb("#e9ecef"),  // 薄い枠線を設定
 //   {
-//     // 言語名（lang）が指定されている場合、右上に表示する
+//     // 言語名（lang）が指定されている場合、右上に表示するー
 //     if it.lang != none {
 //       place(
 //         top + right,
@@ -489,6 +489,11 @@ CSV形式で出力したものをもとに、以下のような表を作成し�
   ], caption: [MPI Ping-Pong ノード間 vs ノード内通信比較グラフ (log-log)]
 )
 
+#figure(
+  align(center)[
+    #image("assets/5-2/mpi_pingpong_comparison_loglinear_bandwidth_vs_size.pdf", alt: "MPI Ping-Pong ノード間 vs ノード内通信比較グラフ (log-linear)", width: 80%)
+  ], caption: [MPI Ping-Pong ノード間 vs ノード内通信比較グラフ (log-linear)]
+)
 
 
 == 5.2 (a)(b) の考察（ノード間 vs ノード内）
@@ -536,7 +541,7 @@ $ sbatch mpi_collective.sh
 #strong[データサイズを変化させた場合の通信時間の比較（P=16 固定）]:
 #figure(
   align(center)[
-    #image("assets/5-2/mpi_collective_size_vs_time.pdf", alt: "データサイズ vs 通信時間", width: 80%)
+    #image("assets/5-2/mpi_collective_size_vs_bandwidth.pdf", alt: "データサイズ vs 通信時間", width: 80%)
   ], caption: [集団通信 データサイズ vs 通信時間]
 )
 
@@ -608,14 +613,14 @@ $ sbatch mpi_congestion.sh
 
 #figure(
   align(center)[
-    #image("assets/5-2/mpi_congestion.pdf", alt: "通信時間 vs プロセス数", width: 80%)
-  ], caption: [ペア通信 [通信時間 vs プロセス数] (log-logグラフ)]
+    #image("assets/5-2/mpi_congestion_2nodes.pdf", alt: "通信時間 vs プロセス数", width: 80%)
+  ], caption: [ペア通信 [バンド幅 vs プロセス数]]
 ) <fig:mpi-congestion-loglog>
 
 #figure(
   align(center)[
     // mpi_congestion.typの表をここに表示
-    #include "assets/5-2/mpi_congestion.typ"
+    #include "assets/5-2/mpi_congestion_2nodes.typ"
   ], 
   caption: [ペア通信の通信時間の表], 
   kind: table
@@ -627,7 +632,8 @@ $ sbatch mpi_congestion.sh
 
 === 5.2 (e) の考察
 
-- データサイズが小さい領域(8Bytes~数KB程度)では、通信ペア数が１ペア（２プロセス）から３２ペア（６４プロセス）に増加しても、通信時間があまり増加していないことがわかる。これは、データサイズが小さい場合は、通信のレイテンシが支配的であるため、通信ペア数の増加による影響が小さいと考えられる。
+// - データサイズが小さい領域(8Bytes~数KB程度)では、通信ペア数が１ペア（２プロセス）から３２ペア（６４プロセス）に増加しても、通信時間があまり増加していないことがわかる。これは、データサイズが小さい場合は、通信のレイテンシが支配的であるため、通信ペア数の増加による影響が小さいと考えられる。
+- データサイズが8Bytesのように小さい場合は、通信ペア数が1ペア（2プロセス）から32ペア（64プロセス）に増加しても、
 - 一方で、1MB以上の大容量データにおいては、通信ペア数の増加に伴い、通信時間が明確に右肩上がりに増加していることがわかる。（例: 16MB通信で、1ペア時の約1.5msから、32ペア時には約23.5.msへと大幅に遅延。）
   - これは、全ペアが一斉に大容量データの通信を行おうとした結果、一度に通信できる転送帯域を超えてしまい、ネットワークの競合が発生しているためであると考えられる。
 - [留意点]: 
@@ -731,9 +737,18 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
     table.hline(),
     [ノード間 (5.2 a)], [$0.97$], [11.23],
     [ノード内 (5.2 b)], [$0.28$], [11.06],
-  )]
-  , kind: table
+  )],
+  caption: [課題5-2の計算結果],
+  kind: table
   )
+
+実際のデータポイントと求めたa,bによる直線を両軸対数グラフでプロットすると、以下のようになる。
+
+#figure(
+  align(center)[
+    #image("assets/5-2/mpi_pingpong_regression_loglog.pdf", alt: "MPI通信性能の両軸対数グラフ", width: 90%)
+  ], caption: [MPI通信性能の両軸対数グラフ]
+)
 
 // 両端の２点を結んだ直線を描画すると、以下のようになる。
 
@@ -762,6 +777,365 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
 ・並列化の手法・工夫についての解説（プログラムの設計思想や動作の仕組み）。
 ・速度向上に対する論理的な予測（「OpenMPとMPIをどのように分担させたから速くなるはず」「この通信・集計処理は逐次のままなので速度向上に貢献しない（アムダールの法則）」などの考察）。
 ```
+
+== 実装コード
+
+=== `nbody_hybrid.cpp`
+
+```cpp
+#include <mpi.h>
+#include <omp.h>
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <vector>
+
+// ../file_util/read_double_file.hppから、ファイルからdoubleの配列を読み込む関数をインクルード
+#include "../file_util/read_double_file.hpp"
+
+
+struct Particle {
+	double mass;
+	double x, y, z;
+	double vx, vy, vz;
+};
+
+int main(int argc, char** argv) {
+	MPI_Init(&argc, &argv); // MPIの初期化
+
+  int rank, size;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank); // 自分のランク（プロセスID）を取得
+  MPI_Comm_size(MPI_COMM_WORLD, &size); // 全プロセスの数を取得
+
+  // 引数が足りない場合はエラーを出して終了
+  if (argc < 10) {
+    if (rank == 0) {
+      std::fprintf(stderr, "Usage: %s N nodes m_path x_path y_path z_path vx_path vy_path vz_path\n", argv[0]);
+    }
+    MPI_Finalize();
+    return 1;
+  }
+
+  // コマンドライン引数があればNとして読み込み、無ければデフォルト10000にする
+	int N = 10000;
+	if (argc > 1) {
+		N = std::atoi(argv[1]);
+	}
+
+  // コマンドライン引数からファイルパスを読み込む
+  // nodesは二番目の引数
+  const int nodes = std::atoi(argv[2]);
+  
+  const char* m_path = argv[3]; 
+  const char* x_path = argv[4]; 
+  const char* y_path = argv[5]; 
+  const char* z_path = argv[6];
+  const char* vx_path = argv[7];
+  const char* vy_path = argv[8];
+  const char* vz_path = argv[9];
+
+
+	const int STEPS = 1000; // ステップ数
+	const double DT = 1.0; // タイムステップ
+	const double G = 1.0; // 万有引力定数
+
+
+	const int omp_threads = omp_get_max_threads();
+
+  
+  // 各プロセスの担当する星の数を計算
+	const int local_particle_count = N / size; // 割り切れることにする
+  if (N % size != 0) {
+    if (rank == 0) {
+      std::fprintf(stderr, "N must be divisible by MPI process count: N=%d, size=%d\n", N, size);
+    }
+    MPI_Finalize();
+    return 1;
+  }
+	const int start_index = rank * local_particle_count;
+	const int end_index = start_index + local_particle_count;
+
+  std::vector<Particle> particles(N); // 全ての星の情報を全プロセスで共有するためのベクトル
+
+	if (rank == 0) {
+  std::vector<double> masses = read_double_file(m_path, static_cast<std::size_t>(N));
+  std::vector<double> xs = read_double_file(x_path, static_cast<std::size_t>(N));
+  std::vector<double> ys = read_double_file(y_path, static_cast<std::size_t>(N));
+  std::vector<double> zs = read_double_file(z_path, static_cast<std::size_t>(N));
+  std::vector<double> vxs = read_double_file(vx_path, static_cast<std::size_t>(N));
+  std::vector<double> vys = read_double_file(vy_path, static_cast<std::size_t>(N));
+  std::vector<double> vzs = read_double_file(vz_path, static_cast<std::size_t>(N));
+
+    // 読み込んだサイズがNと一致するか確認
+    if (masses.size() != static_cast<std::size_t>(N) ||
+        xs.size() != static_cast<std::size_t>(N) ||
+        ys.size() != static_cast<std::size_t>(N) ||
+        zs.size() != static_cast<std::size_t>(N) ||
+        vxs.size() != static_cast<std::size_t>(N) ||
+        vys.size() != static_cast<std::size_t>(N) ||
+        vzs.size() != static_cast<std::size_t>(N)) {
+      std::fprintf(stderr, "file size does not match N: %s\n", m_path);
+      MPI_Finalize();
+      return 1;
+    }
+
+    // 読み込んだデータをparticlesにコピー
+    for (int i = 0; i < N; ++i) {
+      particles[i].mass = masses[i];
+      particles[i].x = xs[i];
+      particles[i].y = ys[i];
+      particles[i].z = zs[i];
+      particles[i].vx = vxs[i];
+      particles[i].vy = vys[i];
+      particles[i].vz = vzs[i];
+    }
+	}
+
+  // 全プロセスで初期データを共有する
+	MPI_Bcast(particles.data(), N * sizeof(Particle), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+  // 全プロセスが初期データの受け取りを終えるまで待つ
+	MPI_Barrier(MPI_COMM_WORLD);
+
+  // 初期状態を保存
+  std::vector<Particle> initial_particles = particles;
+  std::vector<double> run_times(3);
+
+  // 3回実行してタイミングを計測
+  for (int run = 0; run < 3; ++run) {
+    // 各実行の初めに初期状態に戻す
+    particles = initial_particles;
+
+    // 時間計測開始
+    const double start_time = MPI_Wtime();
+
+    // シミュレーションのメインループ
+    for (int step = 0; step < STEPS; ++step) {
+		std::vector<Particle> next_particles = particles;
+
+    #pragma omp parallel for default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
+		for (int i = start_index; i < end_index; ++i) {
+			double ax = 0.0;
+			double ay = 0.0;
+			double az = 0.0;
+
+			for (int j = 0; j < N; ++j) {
+				if (i == j) {
+					continue;
+				}
+
+				const double dx = particles[j].x - particles[i].x;
+				const double dy = particles[j].y - particles[i].y;
+				const double dz = particles[j].z - particles[i].z;
+				const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
+				const double dist = std::sqrt(dist2);
+				const double f = G * particles[j].mass / dist2;
+
+				ax += f * dx / dist;
+				ay += f * dy / dist;
+				az += f * dz / dist;
+			}
+
+      // 速度と位置の更新
+			next_particles[i].vx = particles[i].vx + DT * ax;
+			next_particles[i].vy = particles[i].vy + DT * ay;
+			next_particles[i].vz = particles[i].vz + DT * az;
+
+			next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
+			next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
+			next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
+		}
+
+    // 結果の集約(Allgatherで行う)
+    // MPI_Allgather(送るデータの先頭アドレス, 送るデータのサイズ, データの型, 受け取るデータの先頭アドレス, 受け取るデータのサイズ, データの型, コミュニケータ)
+    MPI_Allgather(&next_particles[start_index], local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
+              particles.data(), local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE, MPI_COMM_WORLD);
+    // 共有されている変数particlesを全てのプロセスで更新する
+	  }
+
+	  MPI_Barrier(MPI_COMM_WORLD); // 全プロセスが計算を終えるまで待つ
+
+    // 時間計測終了
+    const double end_time = MPI_Wtime();
+    run_times[run] = end_time - start_time;
+  }
+
+  // 平均時間を計算
+  double total_time = 0.0;
+  for (int i = 0; i < 3; ++i) {
+    total_time += run_times[i];
+  }
+  double avg_time = total_time / 3.0;
+
+  // 結果の出力
+	if (rank == 0) {
+		// CSV形式の計時結果（平均値）
+		std::printf("%d,%d,%d,%d,%.6f\n", nodes, size, omp_threads, N,
+						avg_time);
+		std::ofstream outx("output_x.double", std::ios::binary);
+		std::ofstream outy("output_y.double", std::ios::binary);
+		std::ofstream outz("output_z.double", std::ios::binary);
+		
+		for (int i = 0; i < N; ++i) {
+			double x = particles[i].x;
+			double y = particles[i].y;
+			double z = particles[i].z;
+			outx.write(reinterpret_cast<const char*>(&x), sizeof(double));
+			outy.write(reinterpret_cast<const char*>(&y), sizeof(double));
+			outz.write(reinterpret_cast<const char*>(&z), sizeof(double));
+		}
+		outx.close();
+		outy.close();
+		outz.close();
+	}
+
+	MPI_Finalize(); // MPIの終了
+	return 0;
+}
+```
+
+=== `nbody_hybrid.sh`
+```sh
+#!/bin/bash
+#set -euo pipefail
+
+#SBATCH -J nbody_hybrid
+#SBATCH -N 4
+#SBATCH -p ppx2
+#SBATCH -w ppx2-[00-03]
+#SBATCH --ntasks=112     # 全ノードの合計コア数（スロット）を最大112として確保
+#SBATCH -o out/nbody_hybrid_%j.out
+
+module load openmpi
+
+
+echo "Nodes,MPI_Processes,OpenMP_Threads,NumParticles,Time_sec"
+
+# 実行用のヘルパー関数を定義（引数: ノード数, MPIプロセス数, OMPスレッド数）
+run_exp() {
+    local nodes=$1
+    # --map-by ppr:X:node:PE=N は 1ノードあたりXプロセス、1プロセスあたりNコアを割当
+    local procs_per_node=$2
+    local omp_threads=$3
+    local run_particles=$4
+    local source_particles=$5
+    local data_dir="./grav_data/n${source_particles}"
+
+    export OMP_NUM_THREADS=${omp_threads}
+    export OMP_PROC_BIND=${OMP_PROC_BIND:-close}
+    export OMP_PLACES=${OMP_PLACES:-cores}
+    # -n は全体のMPIプロセス数
+    local mpi_procs=$((nodes * procs_per_node))  # 全体のMPIプロセス数
+
+    # 1 rank/node かつ多数スレッド時は、ソケット跨ぎの core bind エラーを回避する。
+    if [[ ${procs_per_node} -eq 1 && ${omp_threads} -ge 27 ]]; then
+        mpirun -n ${mpi_procs} \
+            ${NQSII_MPIOPTS:-} \
+            -x OMP_NUM_THREADS \
+            -x OMP_PROC_BIND \
+            -x OMP_PLACES \
+            --map-by ppr:${procs_per_node}:node \
+            --bind-to none \
+            --report-bindings \
+            ./nbody_hybrid \
+            ${run_particles} \
+            ${nodes} \
+            ${data_dir}/m.double \
+            ${data_dir}/x.double \
+            ${data_dir}/y.double \
+            ${data_dir}/z.double \
+            ${data_dir}/vx.double \
+            ${data_dir}/vy.double \
+            ${data_dir}/vz.double
+    else
+        mpirun -n ${mpi_procs} \
+            ${NQSII_MPIOPTS:-} \
+            -x OMP_NUM_THREADS \
+            -x OMP_PROC_BIND \
+            -x OMP_PLACES \
+            --map-by ppr:${procs_per_node}:node:PE=${omp_threads} \
+            --bind-to core \
+            --report-bindings \
+            ./nbody_hybrid \
+            ${run_particles} \
+            ${nodes} \
+            ${data_dir}/m.double \
+            ${data_dir}/x.double \
+            ${data_dir}/y.double \
+            ${data_dir}/z.double \
+            ${data_dir}/vx.double \
+            ${data_dir}/vy.double \
+            ${data_dir}/vz.double
+    fi
+}
+
+# run_exp 1 28 1 896 1000
+
+run_particles_list=(896 2688 8960 26880)
+source_particles_list=(1000 3072 10000 30720)
+# run_particles_list=(896)
+# source_particles_list=(1000)
+
+for idx in "${!run_particles_list[@]}"; do
+    run_particles=${run_particles_list[$idx]}
+    source_particles=${source_particles_list[$idx]}
+
+    # １ノード
+    run_exp 1 28 1 "${run_particles}" "${source_particles}"
+    run_exp 1 4 7 "${run_particles}" "${source_particles}"
+    run_exp 1 2 14 "${run_particles}" "${source_particles}"
+    run_exp 1 1 28 "${run_particles}" "${source_particles}"
+
+    # ２ノード
+    run_exp 2 28 1 "${run_particles}" "${source_particles}"
+    run_exp 2 4 7 "${run_particles}" "${source_particles}"
+    run_exp 2 2 14 "${run_particles}" "${source_particles}"
+    run_exp 2 1 28 "${run_particles}" "${source_particles}"
+
+    # ４ノード
+    run_exp 4 28 1 "${run_particles}" "${source_particles}"
+    run_exp 4 4 7 "${run_particles}" "${source_particles}"
+    run_exp 4 2 14 "${run_particles}" "${source_particles}"
+    run_exp 4 1 28 "${run_particles}" "${source_particles}"
+
+    # 28コア全開 vs 27コア (OS Jitter回避)
+    run_exp 1 1 27 "${run_particles}" "${source_particles}"
+    run_exp 2 1 27 "${run_particles}" "${source_particles}"
+    run_exp 4 1 27 "${run_particles}" "${source_particles}"
+done
+```
+
+== ハイブリッドな並列化の手法と工夫点
+
+=== 並列化の手法
+- MPIを用いて、全プロセスで全ての星の情報を共有する。
+  - 各プロセスは、全ての星の位置と速度を保持する。
+  - 各ブロセスが、全星のリストの中で、自分が担当する星の範囲を決める。
+  - 各プロセスは、担当する星の加速度計算と位置・速度の更新を行う。
+  - 各ステップの最後に、MPI_Allgatherを用いて、全プロセスが担当する星の更新結果を全プロセスで共有する。
+- OpenMPを用いて、各プロセス内で担当する星の加速度計算と位置・速度の更新を並列化する。
+  - `#pragma omp parallel for` を用いて、担当する星のループを並列化する。
+  - 各プロセス内で、複数のスレッドが同時に担当する星の加速度計算と位置・速度の更新を行う。
+
+=== 工夫点
+- OpenMPによる並列化(`#pragma omp parallel for`)は、各プロセスが担当する星のループを並列化するために、二重ループのうち、外側のループを並列化するようにした。これによって、各スレッドが担当する星の範囲を分担して計算することができる。外側のループと内側のループの間で、各スレッドが計算した加速度を格納する変数(ax, ay, az)をスレッドごとのローカル変数として独立させ、書き込み先となる`next_particles[i]`への更新は、スレッド間の競合を防ぎたいという意図を持って、ループの最後に行うようにした。
+- 毎ステップの更新結果を他プロセスに共有する際に、`MPI_Allgather`を用いて、全員の`particles`配列を一括更新している。
+  - 今回の実装では、計算対象の粒子数(`N`)がプロセス数(`size`)で割り切れることを前提として、各プロセスが担当する粒子の範囲を均等に分割している。これによって、`MPI_Allgather`で全プロセスが同じサイズのデータを送受信することができる。
+  - `MPI_Allgatherv`を用いれば、粒子数がプロセス数で割り切れない場合でも、各プロセスが担当する粒子の数を柔軟に変えることができるが、通信量が不均等になるため、今回は割り切れる前提で実装している。
+    - もし割り切れないことを考慮するなら、配列を長めに確保して、担当する粒子数が少ないプロセスは余った部分を使わないようにするなどの工夫も考えられる。
+- ジョブスクリプト側の工夫: 
+  - `--bind-to core`と`--map-by ppr:${procs_per_node}:node:PE=${omp_threads}`によって、例えば、４プロセス７スレッドの時は、`:PE=7`でMPIが１プロセスにつき、７つの物理コアをセットにしたまとまりに対して、各プロセスを縛り付ける(bind-to core)ようにしている。これによって、スレッドが物理コアを跨いで実行されることを防いでいる。
+  - ただ、MPIプロセス数が1プロセスで、OpenMPスレッド数が28の時は、全てのコアを1プロセスが使用することになるため、同様のコード実装だとCPUソケットが14コアで分断されているため、ソケット跨ぎのcore bindエラーが発生する。これを回避するために、`--bind-to none` として、MPIプロセスのバインドを解除して、OpenMP側の変数 `OMP_PROC_BIND` と `OMP_PLACES` を用いて、28スレッドを全てのコアに均等に割り当てるようにしている。
+  - `--report-bindings`をつけて、並列化が綺麗に分散できているかの確認をした。
+
+=== 速度向上に対する予測
+
+- 重力相互作用の計算は、二重ループであるため、$O(N^2)$の計算量を持つ最大のボトルネックであり、ここをOpenMPで並列化し、かつ、担当範囲をMPIプロセスで分割(`local_particle_count = N / size`)することで、純粋な計算時間に関しては、「ノード数とスレッド数の積に比例して、理想的には速度向上するはず」と予測できる。
+- ただし、MPIプロセス間での通信(`MPI_Allgather`)は、全プロセスが全ての粒子の更新結果を共有するために、プロセス数を増やすほどデータ集約の連携コストが増えるため、プロセス数を増やすほど通信オーバーヘッドが大きくなり、速度向上に対する貢献が減少することが予測される。
+- したがって、ノード数を増やした際のスケーラビリティは、「$O(N^2)$で減っていく計算時間」と「$O(N)$もしくは$log(P)$で増えていく通信時間」のトレードオフで決まると考えられる。粒子数$N$が小さい場合は、通信時間の割合が相対的に大きくなり、速度向上が頭打ちになるが、`N`が大き区なるほど、計算の並列化による恩恵が大きくなり、理論値に近い速度向上が期待できると予測される。
+
 // == 5.4 重力プログラミング(N体問題)
 // <重力プログラミングn体問題>
 // - #strong[実行環境]: PPX, 2ノードに8プロセスを配置 (`-N 2 -n 8`)
@@ -789,6 +1163,152 @@ $ b approx 1.1056 times 10^9 upright(" Bytes/sec") approx 11.06 med G B\/s $
 
 = 課題 5： 
 #strong[課題 4 のプログラムについて，ノード数とスレッド数の様々な組み合わせの実行結果を示し，速度向上率，並列化効率を求めよ．さらに，結果に対する考察を示せ．]
+
+実行結果として、以下のグラフと表を示す。
+- #link(<graph:nbody-hybrid-time>)[N固定で、ノード数とスレッド数の組み合わせを変化させた時の実行時間のグラフ(各Nごとに計4グラフ)]
+- #link(<graph:nbody-hybrid-speedup>)[N固定で、ノード数とスレッド数の組み合わせを変化させた時の速度向上率のグラフ(各Nごとに計4グラフ)]
+- #link(<graph:nbody-hybrid-efficiency>)[N固定で、ノード数とスレッド数の組み合わせを変化させた時の並列化効率のグラフ(各Nごとに計4グラフ)]
+- #link(<graph:nbody-hybrid-speedup-1mpi28omp>)[スレッド数固定で、ノード数とデータサイズNを変化させた時の速度向上率のグラフ(1MPI×28OMPの実行結果)]
+- #link(<graph:nbody-hybrid-efficiency-1mpi28omp>)[スレッド数固定で、ノード数とデータサイズNを変化させた時の並列化効率のグラフ(1MPI×28OMPの実行結果)]
+- #link(<graph:nbody-hybrid-gips>)[ノード数固定で、データサイズとスレッド数を変化させた時の計算性能GIPSのグラフ(4ノードでの実行結果)]
+- #link(<tbl:nbody-hybrid>)[ノード数とスレッド数の様々な組み合わせの実行時間・速度向上率・並列化効率の表]
+
+== 実行結果
+
+=== 実行時間のスケーラビリティのグラフ
+
+// 複数枚のPDFの時のグラフの表示方法
+#figure(
+  grid(
+    columns: 2,
+    gutter: 1em,
+    figure(
+      image("assets/5-4/nbody_hybrid_896.pdf", page: 1),
+      caption: [N=896]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_2688.pdf", page: 1),
+      caption: [N=2688]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_8960.pdf", page: 1),
+      caption: [N=8960]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_26880.pdf", page: 1),
+      caption: [N=26880]
+    ),
+  ),
+  caption: [N=896, 2688, 8960, 26880の時の実行時間のスケーラビリティグラフ一覧]
+)<graph:nbody-hybrid-time>
+
+=== 速度向上率のグラフ
+
+#figure(
+  grid(
+    columns: 2,
+    gutter: 1em,
+    figure(
+      image("assets/5-4/nbody_hybrid_896.pdf", page: 2),
+      caption: [N=896]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_2688.pdf", page: 2),
+      caption: [N=2688]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_8960.pdf", page: 2),
+      caption: [N=8960]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_26880.pdf", page: 2),
+      caption: [N=26880]
+    ),
+  ),
+  caption: [N=896, 2688, 8960, 26880の時の速度向上率グラフ一覧]
+)<graph:nbody-hybrid-speedup>
+
+=== 並列化効率のグラフ
+
+#figure(
+  grid(
+    columns: 2,
+    gutter: 1em,
+    figure(
+      image("assets/5-4/nbody_hybrid_896.pdf", page: 3),
+      caption: [N=896]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_2688.pdf", page: 3),
+      caption: [N=2688]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_8960.pdf", page: 3),
+      caption: [N=8960]
+    ),
+    figure(
+      image("assets/5-4/nbody_hybrid_26880.pdf", page: 3),
+      caption: [N=26880]
+    ),
+  ),
+  caption: [N=896, 2688, 8960, 26880の時の並列化効率グラフ一覧]
+)<graph:nbody-hybrid-efficiency>
+
+=== ノード数を変化させた時の速度向上率のグラフ
+
+#figure(
+  align(center)[
+    #image("assets/5-4/nbody_hybrid_26880.pdf", page: 5, width: 80%)
+  ],
+  caption: [ノード数を変化させた時の速度向上率$S(p)$のグラフ(1MPI×28OMPの実行結果) ]
+)<graph:nbody-hybrid-speedup-1mpi28omp>
+
+=== ノード数を変化させた時の並列化効率のグラフ
+
+#figure(
+  align(center)[
+    #image("assets/5-4/nbody_hybrid_26880.pdf", page: 6, width: 80%)
+  ],
+  caption: [Nを変化させた時の並列化効率$E(p)$のグラフ(1MPI×28OMPの実行結果) ]
+)<graph:nbody-hybrid-efficiency-1mpi28omp>
+
+=== 計算性能GIPSのグラフ
+
+#figure(
+  align(center)[
+    #image("assets/5-4/nbody_hybrid_26880.pdf", page: 4, width: 80%)
+  ],
+  caption: [Nを変化させた時の計算性能GIPSのグラフ(4ノードでの実行結果)]
+)<graph:nbody-hybrid-gips>
+
+
+
+=== 実行時間・速度向上率・並列化効率の表
+
+#figure(
+  align(center)[
+    #include "assets/5-4/nbody_hybrid.typ"
+  ],
+  caption: [nbody_hybrid の実行時間・速度向上率・並列化効率・実効性能 [GIPS]],
+  kind: table
+) <tbl:nbody-hybrid>
+
+== 考察
+
+- 基本的に、通信過多になる[28MPIプロセス×1スレッド]が最も遅く、通信を最小化する[1MPIプロセス×28スレッド]が最も速い傾向が見られる。これは、通信オーバーヘッドが大きいほど、速度向上に対する貢献が減少するという予測と一致している。
+  - しかし、１ノード実行時において、4MPIプロセス×7スレッドが、1MPIプロセス×28スレッドとほぼ同等の性能を示しているケースも見られた。これは、プロセスを分割したことで、1プロセス内で28スレッドを立てた時に、発生するソケット跨ぎが回避され、４MPIに分割したことによって得られたNUMA(ローカルメモリアクセス)の恩恵が、通信オーバーヘッドの増加を相殺している可能性があると考える。
+-  1ノード（1MPI×28OMP）のデータを見ると \
+  - $N=896$: 0.308 s\
+  - $N=2688$ (約3倍): 2.19 s （理論上は $0.308 times 3^2 = 2.77 s$）\
+  - $N=8960$ (10倍): 23.61 s （理論上は $0.308 times 10^2 = 30.8 s$）\
+  - $N=26880$ (30倍): 211.3 s （理論上は $0.308 times 30^2 = 277 s$）\ 
+  というように、ある程度は$O(N^2)$に近いスケーリングが見られる。\
+  理論値よりも実測が早いのは、Nが大きくなると、計算時間が長くなり、通信やスレッドの管理などのオーバーヘッドの影響が小さくなるためであると考える。
+- #link(<graph:nbody-hybrid-efficiency-1mpi28omp>)[並列化効率のグラフ]のように、
+  - Nがが小さいとノード間通信のオーバーヘッドの影響が大きく、アムダールの法則にしたがって、効率が急降下する傾向が見られる。
+  - 一方でNを大きくしていくと、計算量$O(N^2)$が通信量$O(N)$を圧倒するようになり、ノード数を増やすことの恩恵が大きくなり、#link(<tbl:nbody-hybrid>)[総合表]のN=26880の行のように、4ノードでも、99%という非常に高い効率が得られるようになっている。
+- #link(<graph:nbody-hybrid-speedup-1mpi28omp>)[速度向上率のグラフ]を見ると、Nが十分に大きい時、ノード数を２倍、４倍にすると、実行時間がほぼ半分、1/4になっていることがわかる。これも、計算量$O(N^2)$が通信量$O(N)$を圧倒するようになっているためであると考える。
+- 速度向上率 $S(p)$ および並列化効率 $E(p)$ は、各実行パターンにおいて28コアをフル活用した『1ノード実行時』を基準として算出した。
 
 = 課題 6：
 #strong[実験全体を通して得られた事項についてまとめよ．例えば，並列化手法に対する考え，プログラムの実行時間と通信時間との関係など，気がついたことを述べよ．最後にこの実験を通して得られた自分なりの結論をまとめよ．]
