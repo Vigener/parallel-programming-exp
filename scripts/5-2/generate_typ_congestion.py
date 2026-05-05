@@ -46,7 +46,7 @@ def read_congestion_rows(csv_path: Path) -> dict[int, dict[int, float]]:
 
 		for row in reader:
 			proc = int(float(row["Processes"]))
-			if proc not in {2, 16, 32, 64}:
+			if proc not in {2, 16, 32, 56}:
 				continue
 
 			size = int(float(row["DataSize_Bytes"]))
@@ -61,13 +61,13 @@ def build_typst_table(by_size: dict[int, dict[int, float]]) -> str:
 		"#table(",
 		"  columns: 5,",
 		"  align: (auto, right, right, right, right),",
-		"  table.header([データサイズ], [1ペア単独 (μs)], [8ペア同時 (μs)], [16ペア同時 (μs)], [32ペア同時 (μs)]),",
+		"  table.header([データサイズ], [1ペア単独 (μs)], [8ペア同時 (μs)], [16ペア同時 (μs)], [28ペア同時 (μs)]),",
 		"  table.hline(),",
 	]
 
 	for size in sorted(by_size.keys()):
 		entry = by_size[size]
-		if any(proc not in entry for proc in (2, 16, 32, 64)):
+		if any(proc not in entry for proc in (2, 16, 32, 56)):
 			# Compare only sizes where both conditions are available.
 			continue
 
@@ -75,7 +75,7 @@ def build_typst_table(by_size: dict[int, dict[int, float]]) -> str:
 		single_pair = format_us_from_sec(entry[2])
 		mid_pairs_8 = format_us_from_sec(entry[16])
 		mid_pairs_16 = format_us_from_sec(entry[32])
-		max_pairs = format_us_from_sec(entry[64])
+		max_pairs = format_us_from_sec(entry[56])
 		lines.append(f"  [{size_label}], [${single_pair}$], [${mid_pairs_8}$], [${mid_pairs_16}$], [${max_pairs}$],")
 
 	lines.append(")")

@@ -17,35 +17,64 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_DIR = PROJECT_ROOT / "assets" / "5-2"
+
+FONT_SIZE_TITLE = 24
+FONT_SIZE_AXIS_LABEL = 22
+FONT_SIZE_TICKS = 14
+FONT_SIZE_LEGEND = 18
+
+def resolve_input_path(path: Path) -> Path:
+	if path.is_absolute():
+		return path
+	return PROJECT_ROOT / path
+
+
+def resolve_output_path(path: Path) -> Path:
+	if path.is_absolute():
+		resolved = path
+	else:
+		resolved = PROJECT_ROOT / path
+	resolved.parent.mkdir(parents=True, exist_ok=True)
+	return resolved
+
+
+def read_collective_csv(csv_path: Path) -> pd.DataFrame:
+	"""Read collective CSV and add bandwidth [MB/s] converted from AvgTime_sec."""
+	df = pd.read_csv(csv_path)
+	df = df[df["AvgTime_sec"] > 0].copy()
+	df["Bandwidth_MBps"] = (df["DataSize_Bytes"] / df["AvgTime_sec"]) / 1_000_000
+	return df
 
 
 def read_pingpong_csv(csv_path: Path) -> tuple[list[int], list[float]]:
-	"""Read ping-pong CSV and return (sizes, times_sec)."""
+	"""Read ping-pong CSV and return (sizes, bandwidths_MBps)."""
 	sizes: list[int] = []
-	times_sec: list[float] = []
+	bandwidths_mb_s: list[float] = []
 
 	with csv_path.open("r", encoding="utf-8", newline="") as f:
 		reader = csv.DictReader(f)
 		for row in reader:
 			size = int(float(row["DataSize_Bytes"]))
 			time_sec = float(row["Time_sec"])
+			if time_sec <= 0:
+				continue
+			bandwidth_mb_s = (size / time_sec) / 1_000_000
 			sizes.append(size)
-			times_sec.append(time_sec)
+			bandwidths_mb_s.append(bandwidth_mb_s)
 
-	paired = sorted(zip(sizes, times_sec), key=lambda x: x[0])
+	paired = sorted(zip(sizes, bandwidths_mb_s), key=lambda x: x[0])
 	sorted_sizes = [p[0] for p in paired]
-	sorted_times_sec = [p[1] for p in paired]
-	return sorted_sizes, sorted_times_sec
+	sorted_bandwidths_mb_s = [p[1] for p in paired]
+	return sorted_sizes, sorted_bandwidths_mb_s
 
 
 def make_figure1_size_vs_time(
 	collective_csv: Path, pingpong_csv: Path, output_path: Path
 ) -> None:
-	"""Create Figure 1: Data Size vs Communication Time (log-log)."""
+	"""Create Figure 1: Data Size vs Communication Bandwidth (log-log)."""
 	# Read data
-	df_collective = pd.read_csv(collective_csv)
-	pingpong_sizes, pingpong_times = read_pingpong_csv(pingpong_csv)
+	df_collective = read_collective_csv(collective_csv)
+	pingpong_sizes, pingpong_bandwidths = read_pingpong_csv(pingpong_csv)
 
 	# Filter collective data for P=16
 	df_p16 = df_collective[df_collective["Processes"] == 16]
@@ -61,7 +90,7 @@ def make_figure1_size_vs_time(
 	# Plot ping-pong (cross node)
 	plt.plot(
 		pingpong_sizes,
-		pingpong_times,
+		pingpong_bandwidths,
 		marker="o",
 		markersize=5,
 		linewidth=2.0,
@@ -72,7 +101,7 @@ def make_figure1_size_vs_time(
 	# Plot collective methods for P=16
 	plt.plot(
 		df_manual["DataSize_Bytes"],
-		df_manual["AvgTime_sec"],
+		df_manual["Bandwidth_MBps"],
 		marker="s",
 		markersize=5,
 		linewidth=2.0,
@@ -82,7 +111,7 @@ def make_figure1_size_vs_time(
 
 	plt.plot(
 		df_mpi_bcast["DataSize_Bytes"],
-		df_mpi_bcast["AvgTime_sec"],
+		df_mpi_bcast["Bandwidth_MBps"],
 		marker="^",
 		markersize=5,
 		linewidth=2.0,
@@ -92,7 +121,7 @@ def make_figure1_size_vs_time(
 
 	plt.plot(
 		df_mpi_allgather["DataSize_Bytes"],
-		df_mpi_allgather["AvgTime_sec"],
+		df_mpi_allgather["Bandwidth_MBps"],
 		marker="D",
 		markersize=5,
 		linewidth=2.0,
@@ -103,19 +132,22 @@ def make_figure1_size_vs_time(
 	# Formatting
 	plt.xscale("log")
 	plt.yscale("log")
-	plt.xlabel("データサイズ (Bytes)", fontsize=12)
-	plt.ylabel("通信時間 (sec)", fontsize=12)
-	plt.title("MPI Ping-Pong vs 集団通信（P=16）の通信コスト比較", fontsize=13, fontweight="bold")
+	plt.xlabel("データサイズ (Bytes)", fontsize=FONT_SIZE_AXIS_LABEL)
+	plt.ylabel("バンド幅 [MB/s]", fontsize=FONT_SIZE_AXIS_LABEL)
+	plt.title(
+		"MPI Ping-Pong vs 集団通信（P=16）の通信コスト比較",
+		fontsize=FONT_SIZE_TITLE,
+		fontweight="bold",
+	)
+	plt.xticks(fontsize=FONT_SIZE_TICKS)
+	plt.yticks(fontsize=FONT_SIZE_TICKS)
 
 	plt.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
-	plt.legend(fontsize=18, loc="upper left")
+	plt.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left")
 	plt.tight_layout()
 
 	# Save figure
-	output_path = Path(output_path)
-	if not output_path.is_absolute():
-		OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-		output_path = OUTPUT_DIR / output_path.name
+	output_path = resolve_output_path(Path(output_path))
 	plt.savefig(output_path, dpi=300, bbox_inches="tight")
 	plt.close()
 
@@ -125,7 +157,7 @@ def make_figure1_size_vs_time(
 def make_figure2_procs_vs_time(collective_csv: Path, output_path: Path) -> None:
 	"""Create Figure 2: Number of Processes vs Communication Time (log-log)."""
 	# Read data
-	df = pd.read_csv(collective_csv)
+	df = read_collective_csv(collective_csv)
 
 	# Extract data for small (8 Bytes) and large (1 MB) sizes
 	df_small = df[df["DataSize_Bytes"] == 8].sort_values("Processes")
@@ -176,21 +208,23 @@ def make_figure2_procs_vs_time(collective_csv: Path, output_path: Path) -> None:
 
 	# Set X-axis ticks to powers of 2
 	proc_values = sorted(df["Processes"].unique())
-	plt.xticks(proc_values, [str(p) for p in proc_values])
+	plt.xticks(proc_values, [str(p) for p in proc_values], fontsize=FONT_SIZE_TICKS)
 
-	plt.xlabel("プロセス数", fontsize=12)
-	plt.ylabel("通信時間 (sec)", fontsize=12)
-	plt.title("MPI 集団通信：プロセス数の増加による通信時間の変化", fontsize=13, fontweight="bold")
+	plt.xlabel("プロセス数", fontsize=FONT_SIZE_AXIS_LABEL)
+	plt.ylabel("通信時間 (sec)", fontsize=FONT_SIZE_AXIS_LABEL)
+	plt.title(
+		"MPI 集団通信：プロセス数の増加による通信時間の変化",
+		fontsize=FONT_SIZE_TITLE,
+		fontweight="bold",
+	)
+	plt.yticks(fontsize=FONT_SIZE_TICKS)
 
 	plt.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
-	plt.legend(fontsize=12, loc="upper left", ncol=2)
+	plt.legend(fontsize=FONT_SIZE_LEGEND, loc="upper left", ncol=2)
 	plt.tight_layout()
 
 	# Save figure
-	output_path = Path(output_path)
-	if not output_path.is_absolute():
-		OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-		output_path = OUTPUT_DIR / output_path.name
+	output_path = resolve_output_path(Path(output_path))
 	plt.savefig(output_path, dpi=300, bbox_inches="tight")
 	plt.close()
 
@@ -227,9 +261,11 @@ def main() -> None:
 		help="Figure 2の出力PDFファイル名",
 	)
 	args = parser.parse_args()
+	collective_csv = resolve_input_path(args.collective_csv)
+	pingpong_csv = resolve_input_path(args.pingpong_csv)
 
-	make_figure1_size_vs_time(args.collective_csv, args.pingpong_csv, args.output1)
-	make_figure2_procs_vs_time(args.collective_csv, args.output2)
+	make_figure1_size_vs_time(collective_csv, pingpong_csv, args.output1)
+	make_figure2_procs_vs_time(collective_csv, args.output2)
 
 
 if __name__ == "__main__":

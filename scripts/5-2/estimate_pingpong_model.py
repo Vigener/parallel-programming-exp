@@ -13,7 +13,10 @@ def read_series(csv_path: Path) -> list[tuple[int, float]]:
 		reader = csv.DictReader(f)
 		for row in reader:
 			size_bytes = int(float(row["DataSize_Bytes"]))
-			time_sec = float(row["Time_sec"])
+			if "AvgTime_sec" in row and row["AvgTime_sec"] not in (None, ""):
+				time_sec = float(row["AvgTime_sec"])
+			else:
+				time_sec = float(row["Time_sec"])
 			series.append((size_bytes, time_sec))
 
 	series.sort(key=lambda x: x[0])
@@ -47,6 +50,25 @@ def estimate_bandwidth_gbps(series: list[tuple[int, float]], large_min_bytes: in
 	bandwidth_bytes_per_sec = [n / t for n, t in large_region]
 	avg_bytes_per_sec = sum(bandwidth_bytes_per_sec) / len(bandwidth_bytes_per_sec)
 	return avg_bytes_per_sec / 1_000_000_000
+
+
+def estimate_a_b(
+	series: list[tuple[int, float]],
+	small_min_bytes: int = 8,
+	small_max_bytes: int = 32,
+	small_points: int = 3,
+	large_min_bytes: int = 1_048_576,
+) -> tuple[float, float, float]:
+	"""T = a + b*N の a,b と、報告値用の帯域(GB/s)を返す。"""
+	a_sec = estimate_latency_us(
+		series,
+		small_min_bytes=small_min_bytes,
+		small_max_bytes=small_max_bytes,
+		small_points=small_points,
+	) / 1_000_000
+	b_gbps = estimate_bandwidth_gbps(series, large_min_bytes=large_min_bytes)
+	b_sec_per_byte = 1.0 / (b_gbps * 1_000_000_000)
+	return a_sec, b_sec_per_byte, b_gbps
 
 
 def report(label: str, series: list[tuple[int, float]], args: argparse.Namespace) -> None:
