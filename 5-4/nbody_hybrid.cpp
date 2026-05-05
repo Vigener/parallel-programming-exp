@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
   const char* vz_path = argv[9];
 
 
-	const int STEPS = 10; // ステップ数
+	const int STEPS = 1000; // ステップ数
 	const double DT = 1.0; // タイムステップ
 	const double G = 1.0; // 万有引力定数
 
@@ -114,11 +114,20 @@ int main(int argc, char** argv) {
   // 全プロセスが初期データの受け取りを終えるまで待つ
 	MPI_Barrier(MPI_COMM_WORLD);
 
-  // 時間計測開始
-	const double start_time = MPI_Wtime();
+  // 初期状態を保存
+  std::vector<Particle> initial_particles = particles;
+  std::vector<double> run_times(5);
 
-  // シミュレーションのメインループ
-	for (int step = 0; step < STEPS; ++step) {
+  // 5回実行してタイミングを計測
+  for (int run = 0; run < 5; ++run) {
+    // 各実行の初めに初期状態に戻す
+    particles = initial_particles;
+
+    // 時間計測開始
+    const double start_time = MPI_Wtime();
+
+    // シミュレーションのメインループ
+    for (int step = 0; step < STEPS; ++step) {
 		std::vector<Particle> next_particles = particles;
 
     #pragma omp parallel for default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
@@ -159,20 +168,27 @@ int main(int argc, char** argv) {
     MPI_Allgather(&next_particles[start_index], local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
               particles.data(), local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE, MPI_COMM_WORLD);
     // これにより、共有されている変数particlesが全てのプロセスで更新される
-	}
+	  }
 
-	MPI_Barrier(MPI_COMM_WORLD); // 全プロセスが計算を終えるまで待つ
+	  MPI_Barrier(MPI_COMM_WORLD); // 全プロセスが計算を終えるまで待つ
 
-  // 時間計測終了
-	const double end_time = MPI_Wtime();
+    // 時間計測終了
+    const double end_time = MPI_Wtime();
+    run_times[run] = end_time - start_time;
+  }
+
+  // 平均時間を計算
+  double total_time = 0.0;
+  for (int i = 0; i < 5; ++i) {
+    total_time += run_times[i];
+  }
+  double avg_time = total_time / 5.0;
 
   // 結果の出力
 	if (rank == 0) {
-		// CSV形式の計時結果
+		// CSV形式の計時結果（平均値）
 		std::printf("%d,%d,%d,%d,%.6f\n", nodes, size, omp_threads, N,
-								end_time - start_time);
-		
-		// 最終位置をバイナリファイルに保存（検証用）
+						avg_time);
 		std::ofstream outx("output_x.double", std::ios::binary);
 		std::ofstream outy("output_y.double", std::ios::binary);
 		std::ofstream outz("output_z.double", std::ios::binary);

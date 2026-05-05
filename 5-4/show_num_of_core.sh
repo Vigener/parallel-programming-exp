@@ -42,8 +42,6 @@ run_exp() {
         mpirun -n ${mpi_procs} \
             ${NQSII_MPIOPTS:-} \
             -x OMP_NUM_THREADS \
-            -x OMP_PROC_BIND \
-            -x OMP_PLACES \
             --map-by ppr:${procs_per_node}:node \
             --bind-to none \
             --report-bindings \
@@ -52,8 +50,6 @@ run_exp() {
         mpirun -n ${mpi_procs} \
             ${NQSII_MPIOPTS:-} \
             -x OMP_NUM_THREADS \
-            -x OMP_PROC_BIND \
-            -x OMP_PLACES \
             --map-by ppr:${procs_per_node}:node:PE=${omp_threads} \
             --bind-to core \
             --report-bindings \

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+#set -euo pipefail
 
 #SBATCH -J nbody_hybrid
 #SBATCH -N 4
@@ -25,10 +25,10 @@ run_exp() {
     local data_dir="./grav_data/n${source_particles}"
 
     export OMP_NUM_THREADS=${omp_threads}
-    # -N はノード数、-n は全体のMPIプロセス数
+    # -n は全体のMPIプロセス数
     local mpi_procs=$((nodes * procs_per_node))  # 全体のMPIプロセス数
 
-    mpirun -N ${nodes} -n ${mpi_procs} \
+    mpirun -n ${mpi_procs} \
         ${NQSII_MPIOPTS:-} \
         -x OMP_NUM_THREADS \
         --map-by ppr:${procs_per_node}:node:PE=${omp_threads} \
