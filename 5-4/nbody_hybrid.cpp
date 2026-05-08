@@ -128,46 +128,46 @@ int main(int argc, char** argv) {
 
     // シミュレーションのメインループ
     for (int step = 0; step < STEPS; ++step) {
-		std::vector<Particle> next_particles = particles;
+		  std::vector<Particle> next_particles = particles;
 
-    #pragma omp parallel for default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
-		for (int i = start_index; i < end_index; ++i) {
-			double ax = 0.0;
-			double ay = 0.0;
-			double az = 0.0;
+      #pragma omp parallel for default(none) shared(particles, next_particles, N, start_index, end_index, DT, G)
+      for (int i = start_index; i < end_index; ++i) {
+        double ax = 0.0;
+        double ay = 0.0;
+        double az = 0.0;
 
-			for (int j = 0; j < N; ++j) {
-				if (i == j) {
-					continue;
-				}
+        for (int j = 0; j < N; ++j) {
+          if (i == j) {
+            continue;
+          }
 
-				const double dx = particles[j].x - particles[i].x;
-				const double dy = particles[j].y - particles[i].y;
-				const double dz = particles[j].z - particles[i].z;
-				const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
-				const double dist = std::sqrt(dist2);
-				const double f = G * particles[j].mass / dist2;
+          const double dx = particles[j].x - particles[i].x;
+          const double dy = particles[j].y - particles[i].y;
+          const double dz = particles[j].z - particles[i].z;
+          const double dist2 = dx * dx + dy * dy + dz * dz + 1e-10;
+          const double dist = std::sqrt(dist2);
+          const double f = G * particles[j].mass / dist2;
 
-				ax += f * dx / dist;
-				ay += f * dy / dist;
-				az += f * dz / dist;
-			}
+          ax += f * dx / dist;
+          ay += f * dy / dist;
+          az += f * dz / dist;
+        }
 
-      // 速度と位置の更新
-			next_particles[i].vx = particles[i].vx + DT * ax;
-			next_particles[i].vy = particles[i].vy + DT * ay;
-			next_particles[i].vz = particles[i].vz + DT * az;
+        // 速度と位置の更新
+        next_particles[i].vx = particles[i].vx + DT * ax;
+        next_particles[i].vy = particles[i].vy + DT * ay;
+        next_particles[i].vz = particles[i].vz + DT * az;
 
-			next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
-			next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
-			next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
-		}
+        next_particles[i].x = particles[i].x + DT * next_particles[i].vx;
+        next_particles[i].y = particles[i].y + DT * next_particles[i].vy;
+        next_particles[i].z = particles[i].z + DT * next_particles[i].vz;
+      }
 
-    // 結果の集約(Allgatherで行う)
-    // MPI_Allgather(送るデータの先頭アドレス, 送るデータのサイズ, データの型, 受け取るデータの先頭アドレス, 受け取るデータのサイズ, データの型, コミュニケータ)
-    MPI_Allgather(&next_particles[start_index], local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
-              particles.data(), local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE, MPI_COMM_WORLD);
-    // これにより、共有されている変数particlesが全てのプロセスで更新される
+      // 結果の集約(Allgatherで行う)
+      // MPI_Allgather(送るデータの先頭アドレス, 送るデータのサイズ, データの型, 受け取るデータの先頭アドレス, 受け取るデータのサイズ, データの型, コミュニケータ)
+      MPI_Allgather(&next_particles[start_index], local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE,
+                particles.data(), local_particle_count * static_cast<int>(sizeof(Particle)), MPI_BYTE, MPI_COMM_WORLD);
+      // これにより、共有されている変数particlesが全てのプロセスで更新される
 	  }
 
 	  MPI_Barrier(MPI_COMM_WORLD); // 全プロセスが計算を終えるまで待つ
